@@ -5,10 +5,16 @@ import Player from "./Player.js";
         1) PASS: test case for choosing smallest area to give
         2) PASS: 2nd test case for choosing smallest area to give
         3) PASS: 3rd test case for choosing smallest area to give (smallest group of 2s is wrong) - oops, test 2 already covers this...
-        4) AI-heuristic FAIL: test case for knowing when to not take a square
+        4) PASS: test case for knowing when to not take a square - AI ripens the
+           offered 4-chain (plays the middle edge) instead of taking it,
+           forcing the opponent to take all 4 and open the rest
         5) PASS: AI wasn't giving a single box before larger areas due to a bug
-        6) AI-heuristic FAIL: not best to give smallest available area - ACTUALLY IF OTHER PLAYER IS SMART, THERE IS NO WAY FOR PLAYER 1 TO WIN...
-        7) AI-heuristic FAIL: don't take squares
+        6) PASS: opens the smallest pendant chain at an end (h,3,2 / v,2,5),
+           not a random border of the smallest area - verified optimal vs the
+           exact solver (bestVal -13; P2 can't win outright, but this loses least)
+        7) PASS: don't take squares - AI ripens the offered 2-chain (v,2,5)
+           instead of taking the single box, forcing the opponent to take 2
+           and open the rest
         8) PASS: loop hardhearted handout - AI as controller takes all-but-4 from an
            offered 6-loop, then offers the remaining 4 (instead of taking them),
            keeping control; opponent takes 4 and must open the 6-chain, which the
