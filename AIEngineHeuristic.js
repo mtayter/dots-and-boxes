@@ -176,38 +176,47 @@ export default class AIEngineHeuristic {
         return this.doubleLoony(R, rset) || this.chainDoubleCross(R, rset);
     }
     // Take one 3-sided box from R, preferring takes that close a single box.
+    // Picks randomly among equivalent takes instead of the first found.
     takeOne(R) {
-        let fallback = null;
+        const singles = [], doubles = [];
         for (const [i,j] of R) {
             if (this.squares[i][j] != 3) continue;
             const edges = this.untakenEdges(i,j);
             if (edges.length == 0) continue;
             const e = edges[0];
-            if (!fallback) fallback = e;
             const [a,b] = this.edgeBoxes(e);
             const a3 = a && this.squares[a[0]][a[1]] == 3;
             const b3 = b && this.squares[b[0]][b[1]] == 3;
-            if (!(a3 && b3)) return e; // closes exactly one box
+            if (a3 && b3) doubles.push(e); else singles.push(e);
         }
-        return fallback;
+        const pool = singles.length > 0 ? singles : doubles;
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
     // "Ripen" a loop (or short chain): play an untaken edge shared by two
     // 2-sided boxes. Both become 3-sided, nothing is completed, and the turn
     // passes -- the opponent must take them and open the next component.
+    // Picks randomly among equivalent edges.
     doubleLoony(R, rset) {
+        const pool = [];
+        const seen = new Set();
         for (const [i,j] of R) {
             if (this.squares[i][j] != 2) continue;
             for (const [ni,nj] of this.neighbors(i,j)) {
                 if (!rset.has(ni+','+nj) || this.squares[ni][nj] != 2) continue;
                 const e = this.sharedEdge(i,j,ni,nj);
-                if (!this.edgeTaken(e)) return e;
+                const key = e.join(',');
+                if (!this.edgeTaken(e) && !seen.has(key)) {
+                    seen.add(key);
+                    pool.push(e);
+                }
             }
         }
-        return null;
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
     // Double-cross a 2-chain: play the end edge of the 2-sided box, leaving
-    // two 3-sided boxes for the opponent.
+    // two 3-sided boxes for the opponent. Picks randomly among equivalent edges.
     chainDoubleCross(R, rset) {
+        const pool = [];
         for (const [i,j] of R) {
             if (this.squares[i][j] != 2) continue;
             for (const e of this.untakenEdges(i,j)) {
@@ -218,18 +227,19 @@ export default class AIEngineHeuristic {
                     if (rset.has(nb[0]+','+nb[1])) shared = true;
                     else if (this.squares[nb[0]][nb[1]] == 3) unsafe = true;
                 }
-                if (!shared && !unsafe) return e;
+                if (!shared && !unsafe) pool.push(e);
             }
         }
-        return null;
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
-    // Original behavior: complete the first available 3-sided box.
+    // Original behavior: complete a 3-sided box, picking randomly among them.
     greedyTake(threes) {
+        const pool = [];
         for (const [i,j] of threes) {
             const edges = this.untakenEdges(i,j);
-            if (edges.length > 0) return edges[0];
+            if (edges.length > 0) pool.push(edges[0]);
         }
-        return null;
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
     // ---- opener ----
     openerMove() {
@@ -300,12 +310,16 @@ export default class AIEngineHeuristic {
             }
         }
 
-        // open the smallest pendant chain in the smallest area at an end,
-        // so the opponent takes exactly that chain and must open the rest
+        // open the smallest pendant chain at an end,
+        // so the opponent takes exactly that chain and must open the rest.
+        // Picks randomly among equally-small chains and among a chain's ends.
         const chains = this.findChains(this.smallestArea);
         if (chains.length > 0) {
-            chains.sort((a,b) => a.boxes.length - b.boxes.length);
-            return chains[0].openEdge;
+            let minSize = Infinity;
+            for (const c of chains) minSize = Math.min(minSize, c.boxes.length);
+            const smallest = chains.filter(c => c.boxes.length == minSize);
+            const c = smallest[Math.floor(Math.random() * smallest.length)];
+            return c.openEdges[Math.floor(Math.random() * c.openEdges.length)];
         }
 
         // fall back to a random border of the smallest area
@@ -329,7 +343,8 @@ export default class AIEngineHeuristic {
     }
     // Find pendant chains among the given area (array of "i,j" strings, all
     // 2-sided). Strips junctions (boxes with >= 3 chain-neighbors); each
-    // remaining path component is a chain. Returns [{boxes, openEdge}].
+    // remaining path component is a chain. Returns [{boxes, openEdges}],
+    // where openEdges are the playable end edges (one per end).
     findChains(area) {
         const boxes = area.map(s => s.split(',').map(num => parseInt(num)));
         const aset = new Set(area);
@@ -380,8 +395,12 @@ export default class AIEngineHeuristic {
             // a cycle has no ends; only paths can be opened at an end
             const ends = comp.filter(([a,b]) => chainDeg(a,b,removed) == 1);
             if (ends.length == 0) continue;
-            const openEdge = this.chainEndEdge(ends[0][0], ends[0][1], aset, removed);
-            if (openEdge) chains.push({ boxes: comp, openEdge });
+            const openEdges = [];
+            for (const [ei,ej] of ends) {
+                const e = this.chainEndEdge(ei, ej, aset, removed);
+                if (e) openEdges.push(e);
+            }
+            if (openEdges.length > 0) chains.push({ boxes: comp, openEdges });
         }
         return chains;
     }
