@@ -310,9 +310,10 @@ export default class AIEngineHeuristic {
             }
         }
 
-        // open the smallest pendant chain at an end,
-        // so the opponent takes exactly that chain and must open the rest.
-        // Picks randomly among equally-small chains and among a chain's ends.
+        // open the smallest pendant chain at any spot (end or interior),
+        // so the opponent takes the chain and must open the rest.
+        // Picks randomly among equally-small chains and among all of a
+        // chain's edges. Verified on Test 9: all chain moves are optimal.
         const chains = this.findChains(this.smallestArea);
         if (chains.length > 0) {
             let minSize = Infinity;
@@ -344,7 +345,10 @@ export default class AIEngineHeuristic {
     // Find pendant chains among the given area (array of "i,j" strings, all
     // 2-sided). Strips junctions (boxes with >= 3 chain-neighbors); each
     // remaining path component is a chain. Returns [{boxes, openEdges}],
-    // where openEdges are the playable end edges (one per end).
+    // where openEdges are ALL playable edges of the chain: end edges (one
+    // per end) plus interior shared edges. Playing an interior edge makes
+    // two boxes 3-sided; playing an end edge makes one 3-sided. Either way
+    // the opponent takes the chain.
     findChains(area) {
         const boxes = area.map(s => s.split(',').map(num => parseInt(num)));
         const aset = new Set(area);
@@ -396,9 +400,24 @@ export default class AIEngineHeuristic {
             const ends = comp.filter(([a,b]) => chainDeg(a,b,removed) == 1);
             if (ends.length == 0) continue;
             const openEdges = [];
+            // end edges: one per end
             for (const [ei,ej] of ends) {
                 const e = this.chainEndEdge(ei, ej, aset, removed);
                 if (e) openEdges.push(e);
+            }
+            // interior edges: shared untaken edges between two chain boxes
+            const compSet = new Set(comp.map(([a,b]) => a+','+b));
+            const seenE = new Set();
+            for (const [i,j] of comp) {
+                for (const [ni,nj] of this.neighbors(i,j)) {
+                    if (!compSet.has(ni+','+nj)) continue;
+                    const e = this.sharedEdge(i,j,ni,nj);
+                    const key = e.join(',');
+                    if (!this.edgeTaken(e) && !seenE.has(key)) {
+                        seenE.add(key);
+                        openEdges.push(e);
+                    }
+                }
             }
             if (openEdges.length > 0) chains.push({ boxes: comp, openEdges });
         }
