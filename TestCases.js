@@ -19,6 +19,12 @@ import Player from "./Player.js";
            offered 6-loop, then offers the remaining 4 (instead of taking them),
            keeping control; opponent takes 4 and must open the 6-chain, which the
            AI sweeps. Taking all 6 only ties 6-6; the handout wins 8-4.
+        9) Opener chain-end choice on a 4-chain: 4x4 board, opener mode, a
+           4-chain (2,2)-(3,2)-(3,3)-(2,3) plus a blob. Solver: only h,2,2
+           is optimal (-4); the other end v,2,4 and all interior moves are -6.
+           Note: the chain is only 4 long, so the only splits are 1-3 or 2-2;
+           a longer chain would be a fairer test of interior-vs-ends. The
+           heuristic's random-end choice picks wrong 50% of the time here.
         */
 
 
@@ -380,5 +386,62 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("h,1,4");
             if (testAI !== 'human') game.players[1].ai = true;
             game.move("h,0,4");
+        }
+
+        if(testCase == 9) {
+            // Opener chain-end choice on a 4-chain. 4x4 board, opener mode
+            // (no 3-sided boxes). A 4-chain (2,2)-(3,2)-(3,3)-(2,3) plus a
+            // blob. 22 preset moves, no takes, so player 1 (the AI) is to move.
+            // Solver (verified, fast on this small board): only h,2,2 is
+            // optimal (-4); the other end v,2,4 and all interior moves
+            // (h,2,3, v,3,3, h,3,3) are -6. Caveat: the chain is only 4 long,
+            // so the only splits are 1-3 or 2-2 -- a longer chain would be a
+            // fairer test of interior-vs-ends.
+            height = 4;
+            width = 4;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            // left edge
+            game.move("v,0,0");
+            game.move("v,1,0");
+            game.move("v,2,0");
+            game.move("v,3,0");
+            // x=1
+            game.move("v,0,1");
+            game.move("v,1,1");
+            game.move("v,2,1");
+            // x=2
+            game.move("v,0,2");
+            game.move("v,1,2");
+            game.move("v,2,2");
+            game.move("v,3,2");
+            // top right
+            game.move("h,2,0");
+            game.move("h,3,0");
+            // x=4
+            game.move("v,0,4");
+            game.move("v,1,4");
+            game.move("v,3,4");
+            // middle right
+            game.move("h,3,2");
+            game.move("v,2,3");
+            // bottom
+            game.move("h,0,4");
+            game.move("h,1,4");
+            game.move("h,2,4");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,3,4");
         }
 }
