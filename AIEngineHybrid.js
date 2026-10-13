@@ -401,11 +401,18 @@ export default class AIEngineHybrid {
 
         if (moves.length === 1) return lineToString(b, moves[0]);
 
+        // Single time budget for the whole move: the slider value is the
+        // TOTAL thinking time, not per-phase. Solver gets up to 70% of it;
+        // MCTS gets whatever remains (deadline is anchored to start, not
+        // to the post-solver clock, so solver+MCTS never exceed thinkMs).
+        const start = Date.now();
+        const deadline = start + this.thinkMs;
+
         // 1) Exact endgame: few enough lines left to solve perfectly.
         // The solver gets most of the time budget; on abort we fall back
         // to MCTS with whatever time remains.
         if (moves.length <= SOLVER_MAX_MOVES) {
-            const solverDeadline = Date.now() + Math.min(2000, this.thinkMs * 0.7);
+            const solverDeadline = start + Math.min(2000, this.thinkMs * 0.7);
             try {
                 const mv = lineToString(b, solveRoot(b, hBits, vBits, moves, solverDeadline));
                 this.lastExact = true;
@@ -425,7 +432,6 @@ export default class AIEngineHybrid {
 
         // 3) Bitboard MCTS with a time-based budget.
         const root = new MNode(b, hBits, vBits, 1, null, null, 0);
-        const deadline = Date.now() + this.thinkMs;
         let iters = 0;
         while (Date.now() < deadline && iters < this.maxIterations) {
             iters++;
