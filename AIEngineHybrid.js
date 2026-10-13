@@ -251,7 +251,10 @@ function toMatrices(b, hBits, vBits) {
 // Converts bitboards to matrices once, then runs the heuristic on matrices
 // for the whole rollout. Returns boxes closed by the AI (turn === 1).
 // Slower than the dumb rollout (~0.11ms/move) but plays real strategy.
-function rolloutHeuristic(b, hBits, vBits, turn, heuristic) {
+// Epsilon-greedy: with probability epsilon, pick a random move instead of
+// the heuristic move. This adds rollout diversity — pure heuristic rollouts
+// are too deterministic, which hurts MCTS value estimates.
+function rolloutHeuristic(b, hBits, vBits, turn, heuristic, epsilon) {
     const { h, v } = toMatrices(b, hBits, vBits);
     const W = b.W, H = b.H;
     // squares[i][j]: side count for box (i,j). i in [0,H), j in [0,W).
@@ -268,7 +271,31 @@ function rolloutHeuristic(b, hBits, vBits, turn, heuristic) {
     for (let i = 0; i < W; i++) for (let j = 0; j <= H; j++) if (!h[i][j]) movesLeft++;
     for (let i = 0; i < H; i++) for (let j = 0; j <= W; j++) if (!v[i][j]) movesLeft++;
     while (movesLeft > 0) {
-        const m = heuristic.chooseMove(h, v);
+        let m;
+        if (Math.random() < epsilon) {
+            // Random move: pick a random empty line.
+            let idx = (Math.random() * movesLeft) | 0;
+            for (let i = 0; i < W && idx >= 0; i++) {
+                for (let j = 0; j <= H; j++) {
+                    if (!h[i][j]) {
+                        if (idx-- === 0) { m = ["h", i, j]; break; }
+                    }
+                }
+                if (m) break;
+            }
+            if (!m) {
+                for (let i = 0; i < H && idx >= 0; i++) {
+                    for (let j = 0; j <= W; j++) {
+                        if (!v[i][j]) {
+                            if (idx-- === 0) { m = ["v", i, j]; break; }
+                        }
+                    }
+                    if (m) break;
+                }
+            }
+        } else {
+            m = heuristic.chooseMove(h, v);
+        }
         const [type, a, c] = m;
         let closed = 0;
         if (type === "h") {
@@ -424,7 +451,7 @@ export default class AIEngineHybrid {
 
             // Rollout + backpropagation.
             const gained = this.useHeuristicRollouts
-                ? rolloutHeuristic(b, node.hBits, node.vBits, node.turn, this.heuristic)
+                ? rolloutHeuristic(b, node.hBits, node.vBits, node.turn, this.heuristic, this.epsilon)
                 : rollout(b, node.hBits, node.vBits, node.turn, this.epsilon);
             const reward = (node.aiSquares + gained) / squaresLeft;
             let n = node;
