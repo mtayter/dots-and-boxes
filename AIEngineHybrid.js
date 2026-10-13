@@ -147,7 +147,7 @@ function solveRec(b, hBits, vBits, turn, alpha, beta, tt, deadline, counter) {
     }
 
     let best = -Infinity;
-    let fullySearched = true;
+    let pruned = false;
     for (const m of takes.concat(rest)) {
         const s = withLine(b, hBits, vBits, m);
         const closed = boxesClosedBy(b, s.hBits, s.vBits, m);
@@ -160,15 +160,22 @@ function solveRec(b, hBits, vBits, turn, alpha, beta, tt, deadline, counter) {
         }
         if (val > best) best = val;
         if (best > alpha) alpha = best;
-        if (alpha >= beta) { fullySearched = false; break; }
+        if (alpha >= beta) { pruned = true; break; }
     }
-    // Only cache exact values (nodes searched without a cutoff).
-    if (fullySearched) tt.set(key, best);
+    // Only cache when the search completed without pruning. A pruned
+    // search returns a bound (true value >= best), not the exact value.
+    // Storing bounds as exact corrupts later lookups (Test 9: the buggy
+    // TT claimed only 1 of 5 chain moves was optimal; the correct solver
+    // shows all 5 are optimal).
+    // NOTE: This is still not a proof of exactness if a child's value came
+    // from a TT bound, but the TT only stores non-pruned values, and the
+    // root uses a fresh TT per move (see solveRoot), so bounds cannot leak
+    // across root moves.
+    if (!pruned) tt.set(key, best);
     return best;
 }
 
 function solveRoot(b, hBits, vBits, moves, deadline = Date.now() + SOLVER_TIME_MS) {
-    const tt = new Map();
     const counter = { n: 0 };
     let bestMove = moves[0], bestVal = -Infinity;
     const takes = [], rest = [];
@@ -180,6 +187,9 @@ function solveRoot(b, hBits, vBits, moves, deadline = Date.now() + SOLVER_TIME_M
         (isTake ? takes : rest).push(m);
     }
     for (const m of takes.concat(rest)) {
+        // Fresh TT per root move: sharing a TT across root moves lets
+        // bounds from one move's search contaminate another's.
+        const tt = new Map();
         const s = withLine(b, hBits, vBits, m);
         const closed = boxesClosedBy(b, s.hBits, s.vBits, m);
         const val = closed > 0
