@@ -34,7 +34,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"8") must stay in sync with those <option> values.
+ * values here ("0"-"9") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
