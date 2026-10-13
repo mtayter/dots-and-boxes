@@ -19,6 +19,8 @@
 // The engine never removes a legal move from consideration: every move stays
 // in the tree, so genuine sacrifices are never blinded.
 
+import AIEngineHeuristic from "./AIEngineHeuristic.js";
+
 // When this many (or fewer) lines remain, solve the endgame exactly with
 // negamax + alpha-beta + transposition table instead of running MCTS.
 // Benchmarked (5x5, random positions): 12 empties ~110ms, 14 ~330ms,
@@ -224,6 +226,70 @@ function pickRolloutIndex(b, empty, sides, epsilon) {
     return (Math.random() * empty.length) | 0;
 }
 
+// Convert bitboards to h/v matrices for the heuristic engine.
+// h[i][j]: i in [0,W), j in [0,H]; v[i][j]: i in [0,H), j in [0,W].
+// Values are 0 (empty) or 1 (drawn). The heuristic only cares about
+// taken vs untaken, not who drew the line.
+function toMatrices(b, hBits, vBits) {
+    const h = [], v = [];
+    for (let i = 0; i < b.W; i++) {
+        h[i] = [];
+        for (let j = 0; j <= b.H; j++) {
+            h[i][j] = Number((hBits >> BigInt(i * (b.H + 1) + j)) & 1n);
+        }
+    }
+    for (let i = 0; i < b.H; i++) {
+        v[i] = [];
+        for (let j = 0; j <= b.W; j++) {
+            v[i][j] = Number((vBits >> BigInt(i * (b.W + 1) + j)) & 1n);
+        }
+    }
+    return { h, v };
+}
+
+// Heuristic rollout: play to the end using AIEngineHeuristic for every move.
+// Converts bitboards to matrices once, then runs the heuristic on matrices
+// for the whole rollout. Returns boxes closed by the AI (turn === 1).
+// Slower than the dumb rollout (~0.11ms/move) but plays real strategy.
+function rolloutHeuristic(b, hBits, vBits, turn, heuristic) {
+    const { h, v } = toMatrices(b, hBits, vBits);
+    const W = b.W, H = b.H;
+    // squares[i][j]: side count for box (i,j). i in [0,H), j in [0,W).
+    const squares = [];
+    for (let i = 0; i < H; i++) {
+        squares[i] = [];
+        for (let j = 0; j < W; j++) {
+            squares[i][j] = (h[j][i] ? 1 : 0) + (h[j][i + 1] ? 1 : 0) +
+                            (v[i][j] ? 1 : 0) + (v[i][j + 1] ? 1 : 0);
+        }
+    }
+    let aiBoxes = 0, cur = turn;
+    let movesLeft = 0;
+    for (let i = 0; i < W; i++) for (let j = 0; j <= H; j++) if (!h[i][j]) movesLeft++;
+    for (let i = 0; i < H; i++) for (let j = 0; j <= W; j++) if (!v[i][j]) movesLeft++;
+    while (movesLeft > 0) {
+        const m = heuristic.chooseMove(h, v);
+        const [type, a, c] = m;
+        let closed = 0;
+        if (type === "h") {
+            h[a][c] = 1;
+            movesLeft--;
+            // boxes (c-1, a) and (c, a)
+            if (c - 1 >= 0 && ++squares[c - 1][a] === 4) closed++;
+            if (c < H && ++squares[c][a] === 4) closed++;
+        } else {
+            v[a][c] = 1;
+            movesLeft--;
+            // boxes (a, c-1) and (a, c)
+            if (c - 1 >= 0 && ++squares[a][c - 1] === 4) closed++;
+            if (c < W && ++squares[a][c] === 4) closed++;
+        }
+        if (cur === 1) aiBoxes += closed;
+        if (closed === 0) cur = 1 - cur;
+    }
+    return aiBoxes;
+}
+
 // Plays to the end from (hBits, vBits) with `turn` to move. Returns the
 // number of boxes the AI (turn === 1) closes during the rollout.
 function rollout(b, hBits, vBits, turn, epsilon) {
@@ -292,6 +358,8 @@ export default class AIEngineHybrid {
         this.epsilon = options.epsilon ?? 0.15;
         this.maxIterations = options.maxIterations ?? 500000;
         this.thinkMs = options.thinkMs ?? 1400;
+        this.useHeuristicRollouts = !!options.useHeuristicRollouts;
+        this.heuristic = new AIEngineHeuristic();
         this.lastIterations = 0;   // iterations used by the most recent move()
         this.lastExact = false;    // true if the exact solver (not MCTS) chose the move
         this.lastRootStats = null;
@@ -355,7 +423,9 @@ export default class AIEngineHybrid {
             }
 
             // Rollout + backpropagation.
-            const gained = rollout(b, node.hBits, node.vBits, node.turn, this.epsilon);
+            const gained = this.useHeuristicRollouts
+                ? rolloutHeuristic(b, node.hBits, node.vBits, node.turn, this.heuristic)
+                : rollout(b, node.hBits, node.vBits, node.turn, this.epsilon);
             const reward = (node.aiSquares + gained) / squaresLeft;
             let n = node;
             while (n) { n.visits++; n.value += reward; n = n.parent; }
