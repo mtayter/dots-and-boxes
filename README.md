@@ -48,3 +48,6 @@ then open http://localhost:8000.
 Pull requests are welcome — bug fixes, AI improvements, UI polish, anything.
 Open a PR against `main`; small, focused changes are easiest to review.
 
+## License
+
+This project is licensed under the MIT License — see [LICENSE](LICENSE).
