@@ -43,3 +43,8 @@ then open http://localhost:8000.
 - `AIEngineHeuristic.js` — classical heuristic AI (also the MCTS rollout policy's ancestor)
 - `AIEngineHybrid.js` — the hybrid AI (exact endgame solver + bitboard MCTS)
 
+## Contributing
+
+Pull requests are welcome — bug fixes, AI improvements, UI polish, anything.
+Open a PR against `main`; small, focused changes are easiest to review.
+
