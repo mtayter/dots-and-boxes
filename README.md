@@ -14,7 +14,7 @@ Three opponents to choose from:
 - **AI-Heuristic** — fast classical strategy: take free boxes, play safe
   moves, and give away the smallest chain when forced.
 - **AI-Hybrid** (replaces the old MCTS engine) — two engines in one:
-  1. **Exact endgame solver.** When 16 or fewer lines remain, the position is
+  1. **Exact endgame solver.** When 27 or fewer lines remain, the position is
      solved perfectly with negamax + alpha-beta pruning + a transposition
      table. Takes, sacrifices, and chain control all fall out of the search —
      nothing is pruned, so genuine sacrifices are never blinded.

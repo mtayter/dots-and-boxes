@@ -4,7 +4,7 @@
 //
 // Two complementary strategies:
 //
-// 1. EXACT ENDGAME SOLVER -- when 12 or fewer lines remain, the position is
+// 1. EXACT ENDGAME SOLVER -- when 27 or fewer lines remain (SOLVER_MAX_MOVES), the position is
 //    solved perfectly with negamax + alpha-beta pruning + a transposition
 //    table. No heuristics, no move pruning: takes, sacrifices, and chain
 //    control all fall out of the search. This is where Dots and Boxes games
