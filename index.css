@@ -247,6 +247,12 @@
   visibility: hidden;
 }
 
+.think-inline label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  user-select: none;
+}
+
 .think-inline input[type="range"] {
   flex: 1;
   min-width: 0;
