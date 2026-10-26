@@ -35,6 +35,14 @@ import Player from "./Player.js";
            against the exact solver (unique argmax h,0,1); the heuristic's
            move is identical on all seeds. The double-cross donates a
            cascade chain: taking its end box banks 2, not 1.
+        11) Heuristic FAIL / solver PASS: same position as case 10 except
+           v,0,4 is removed and v,0,5 + h,3,0 are added, turning the
+           unopened 4-chain into a 4-loop (same side-count grid, E=18).
+           Remaining inventory is now all loops (8-loop + two 4-loops).
+           Same result: heuristic double-crosses the 2-chain (v,1,0) for
+           -2; optimal h,0,1 takes both chain boxes for +2 -- gap 4.
+           Verified against the exact decomposed evaluator (unique
+           argmax h,0,1); heuristic move identical on all seeds.
         */
 
 
@@ -44,7 +52,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"10") must stay in sync with those <option> values.
+ * values here ("0"-"11") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -533,5 +541,92 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,4,5");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("v,2,5");
+        }
+
+        if(testCase == 11) {
+            // Same board as case 10 except v,0,4 is removed and v,0,5 +
+            // h,3,0 are added. Side counts (X = taken) are identical:
+            //   3 X X 2 2
+            //   2 2 2 2 2
+            //   X 2 2 2 2
+            //   X 2 2 2 2
+            //   X 2 2 X X
+            // but the unplayed shared edge v,0,4 now closes the cycle, so
+            // the unopened 4-chain (top right) becomes a 4-loop. Remaining
+            // inventory is all loops: 8-loop (center) + two 4-loops.
+            // Single offer: the 2-chain (0,0)-(1,0). Heuristic
+            // controllerMove double-crosses it with v,1,0 (closing
+            // nothing) for -2; optimal (exact decomposed evaluator,
+            // unique argmax): h,0,1 takes (0,0) and cascades to (1,0)
+            // for +2. Gap: 4 boxes, as in case 10.
+            // ORDER MATTERS below: 42 moves, one more than case 10, so
+            // the parity flips -- the turn lands on player 1 (the AI)
+            // only if exactly one preset move closes two boxes. The
+            // shared edge v,4,4 therefore goes LAST, after both its
+            // boxes are 3-sided, closing (4,3) and (4,4) together; with
+            // 6 closing moves and 36 toggles, the turn is player 1
+            // after the final closing move, and move() triggers
+            // checkAImove. Do not reorder without re-checking the turn.
+            height = 5;
+            width = 5;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            // Shared edges between taken boxes first (see note above),
+            // except v,4,4 which goes last as the double-close.
+            game.move("v,0,2");
+            game.move("h,0,3");
+            game.move("h,0,4");
+            game.move("h,0,0");
+            game.move("h,0,2");
+            game.move("h,0,5");
+            game.move("h,1,0");
+            game.move("h,1,1");
+            game.move("h,1,5");
+            game.move("h,2,0");
+            game.move("h,2,1");
+            game.move("h,2,5");
+            game.move("h,3,2");
+            game.move("h,3,4");
+            game.move("h,3,5");
+            game.move("h,4,0");
+            game.move("h,4,2");
+            game.move("h,4,4");
+            game.move("h,4,5");
+            game.move("v,0,0");
+            game.move("v,0,1");
+            game.move("v,0,3");
+            game.move("v,1,1");
+            game.move("v,1,3");
+            game.move("v,1,5");
+            game.move("v,2,0");
+            game.move("v,2,1");
+            game.move("v,2,2");
+            game.move("v,2,3");
+            game.move("v,3,0");
+            game.move("v,3,1");
+            game.move("v,3,2");
+            game.move("v,3,3");
+            game.move("v,3,5");
+            game.move("v,4,0");
+            game.move("v,4,1");
+            game.move("v,4,3");
+            game.move("v,4,5");
+            game.move("v,0,5");
+            game.move("h,3,0");
+            game.move("v,2,5");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,4,4");
         }
 }
