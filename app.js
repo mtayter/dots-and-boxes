@@ -27,8 +27,8 @@ function init() {
         if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k iters';
         return n + ' iters';
     };
-    // AI-Hybrid always plays at the engine's fixed strength (no level
-    // selection); the leveled engine takes no strength parameter.
+    // AI-Hybrid always plays at the engine's fixed strength; the
+    // leveled engine takes no strength parameter.
     heightRange.addEventListener('input', (e) => {
         heightValue.textContent = e.target.value;
     });
