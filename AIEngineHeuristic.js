@@ -1,3 +1,46 @@
+import { buildBoard, fromMatrices, emptyLines } from "./AIEngineHybrid.js";
+import { controlValue, computeSides, isDecomposed, extractComponents } from "./ControlValue.js";
+
+// EVALUATOR GATE (component (d) cascade, 2026-10-26): the evaluator
+// branch below is exact but its cost is E child controlValue calls, and
+// child multisets break the parent's memo symmetry — so parent cost does
+// NOT predict branch cost (10x10 all-horizontal-lines parent: 116ms cold,
+// full branch: minutes). Measured branch cost vs unclaimed boxes U
+// (harness/cascade-gate.jsonl + cascade-gate-synth.mjs, contended VM):
+//   U <= 25: max 94.8ms (n=111, incl. cold 5x5 first-branch 37-39ms)
+//   U 26-30: max 62.7ms warm (n=5); cold 7x7 U=20: 52.5ms, U=23: 24.9ms
+//   U >= 32: 907.5ms (7x7), 778.3ms (7x7); U=45/47 cold: 422/645ms;
+//            10x10 U=81-100: parent cv 604ms, branch minutes-scale
+// So the branch runs only when U <= EVALUATOR_MAX_UNCLAIMED (30). Above
+// it, the position falls through to the controller/opener logic below
+// (the pre-evaluator behavior: safe, just not perfect). 5x5 positions
+// always satisfy U <= 25, so this gate never changes 5x5 play and the
+// component-(a) verification (cases 1-9 identity, cases 10/11 flip,
+// 837-position non-decomposed identity) is unaffected by construction.
+// AIEngineLeveled applies the same gate before calling chooseMove so
+// the cascade's step-1 attribution is explicit; this in-branch gate is
+// the backstop that makes the cap hold for every caller.
+//
+// GATE v2 (2026-10-26, after a cold-cache counterexample): U alone does
+// NOT bound cold cost. A random 7x7 decomposed position with U=29 but 14
+// components took 3573.9ms cold (first call; 0.5ms warm) — the micro
+// game's state space grows with the multiset's component structure, and
+// cold children share no memo. A second, U=28 / 12-component position
+// took 452.6ms cold. Both are excluded by EVALUATOR_MAX_COMPONENTS
+// (10): all observed cold in-gate branch totals with <= 10 components
+// are <= 82.7ms (7x7 U=21 / 9 comps; 5x5 cold first-branch 37-39ms).
+// Component count is a weak predictor (a 12-component position also
+// measured 1.9ms cold), so the count cap is deliberately lossy — it
+// excludes some cheap positions — and the per-child deadline below is
+// the real backstop for multisets the structural gate underestimates:
+// the branch abandons (falls through, consuming no Math.random) once
+// evaluatorBudgetMs elapses between child evaluations. Worst case is
+// then deadline + one child evaluation, not minutes. Default budget
+// 100ms (tightest level's 80%-of-VM figure); AIEngineLeveled sets it
+// per level per move (100/300/600/1200ms).
+export const EVALUATOR_MAX_UNCLAIMED = 30;
+export const EVALUATOR_MAX_COMPONENTS = 10;
+
 export default class AIEngineHeuristic {
     constructor() {
         this.h = [];
@@ -10,6 +53,16 @@ export default class AIEngineHeuristic {
         this.smallestArea = [];
         this.curArea = [];
         this.touchedOnes = [];
+        // Per-child evaluator-branch deadline (ms); see gate comment
+        // above. Callers that know their level budget set this before
+        // chooseMove (AIEngineLeveled does, per move); default 100ms.
+        this.evaluatorBudgetMs = 100;
+        // Set by chooseMove: true iff the evaluator branch timed out on
+        // the most recent call (false when the branch was not entered or
+        // completed). Lets AIEngineLeveled fall through to minimax on a
+        // branch timeout instead of returning the fallback move as an
+        // 'evaluator' decision.
+        this.evaluatorTimedOut = false;
     }
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
@@ -35,6 +88,83 @@ export default class AIEngineHeuristic {
     //  - OPENER (no takes): safe moves first, then open the smallest
     //    pendant chain at an end (falling back to the smallest 2-area).
     chooseMove(h,v) {
+        this.evaluatorTimedOut = false;
+
+        // EVALUATOR BRANCH: fully decomposed positions (every remaining
+        // box in a chain/loop component) are solved exactly at the
+        // component level. Children of decomposed positions stay
+        // decomposed, so controlValue is exact on every child. For each
+        // legal move, value = closed + cv(child) if it closes boxes,
+        // else -cv(child) (negamax: a non-closing move passes the turn).
+        // Argmax wins; ties break randomly, as elsewhere in this engine.
+        // Non-decomposed positions fall through to the existing logic
+        // below, unchanged (this branch consumes no Math.random, so the
+        // fall-through random stream is identical to the pre-branch code).
+        // Move-convention note: bitboard line ids map back exactly as
+        // AIEngineHybrid.lineToString does: h id -> ['h', col, row],
+        // v id -> ['v', row, col], matching this engine's ['h', j, i] /
+        // ['v', i, j] returns (h[j][i] / v[i][j]).
+        {
+            const W = h.length, H = v.length;
+            const b = buildBoard(W, H);
+            const { hBits, vBits } = fromMatrices(b, h, v);
+            const sides = computeSides(b, hBits, vBits);
+            // Gate (see EVALUATOR_MAX_UNCLAIMED / EVALUATOR_MAX_COMPONENTS
+            // above): the branch runs only when unclaimed boxes AND
+            // component count are within the gate; above either, execution
+            // falls through to controller/opener logic below (consuming
+            // no Math.random, exactly as the non-decomposed path does).
+            // Inside the branch, a per-child deadline (evaluatorBudgetMs)
+            // abandons the evaluation — again falling through with no
+            // random consumed — so no multiset can stall the move.
+            const decomposed = isDecomposed(sides);
+            let evalInGate = false;
+            if (decomposed) {
+                const comps = extractComponents(b, hBits, vBits, sides);
+                let unclaimed = 0;
+                for (const c of comps) unclaimed += c.n;
+                evalInGate = unclaimed <= EVALUATOR_MAX_UNCLAIMED
+                    && comps.length <= EVALUATOR_MAX_COMPONENTS;
+            }
+            if (decomposed && evalInGate) {
+                const moves = emptyLines(b, hBits, vBits);
+                if (moves.length > 0) {
+                    let bestVal = -Infinity;
+                    let best = [];
+                    let timedOut = false;
+                    const t0 = Date.now();
+                    for (const id of moves) {
+                        if (Date.now() - t0 > this.evaluatorBudgetMs) { timedOut = true; break; }
+                        let chBits, cvBits;
+                        if (id < b.nH) { chBits = hBits | b.hMasks[id]; cvBits = vBits; }
+                        else { chBits = hBits; cvBits = vBits | b.vMasks[id - b.nH]; }
+                        const childSides = computeSides(b, chBits, cvBits);
+                        // Boxes closed by this move: side count 3 -> 4.
+                        // Only boxes adjacent to the played line change,
+                        // so this count is exact.
+                        let closed = 0;
+                        for (let bi = 0; bi < childSides.length; bi++) {
+                            if (sides[bi] === 3 && childSides[bi] === 4) closed++;
+                        }
+                        const cv = controlValue(b, chBits, cvBits, childSides).value;
+                        const val = closed > 0 ? closed + cv : -cv;
+                        if (val > bestVal) { bestVal = val; best = [id]; }
+                        else if (val === bestVal) best.push(id);
+                    }
+                    if (!timedOut) {
+                        const id = best[Math.floor(Math.random() * best.length)];
+                        if (id < b.nH) return ['h', Math.floor(id / (H + 1)), id % (H + 1)];
+                        const k = id - b.nH;
+                        return ['v', Math.floor(k / (W + 1)), k % (W + 1)];
+                    }
+                    // Timed out: flag it (so the cascade can fall through
+                    // to minimax) and fall through to controller/opener
+                    // below for callers that use the return directly.
+                    this.evaluatorTimedOut = true;
+                }
+                // No legal moves: fall through to existing logic (as before).
+            }
+        }
 
         this.h = h;
         this.v = v;

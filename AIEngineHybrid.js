@@ -20,6 +20,17 @@
 // in the tree, so genuine sacrifices are never blinded.
 
 import AIEngineHeuristic from "./AIEngineHeuristic.js";
+// MCTS-WITH-CUTOFF (component (c) of the engine cascade; OFF by default,
+// see `mctsCutoff` in the constructor). ControlValue.js imports
+// buildBoard/fromMatrices/emptyLines from this file, so this import closes
+// a Hybrid -> ControlValue -> Hybrid cycle. It loads cleanly in Node ESM:
+// neither module touches an imported binding during top-level evaluation
+// (both only define functions/classes at the top level), so the cycle
+// never trips "cannot access before initialization" (verified empirically
+// with a full-graph import + behavioral tests, see the harness
+// cutoff-smoke.mjs). If that ever regresses, STOP and report it rather
+// than restructuring the modules.
+import { controlValue, isDecomposed } from "./ControlValue.js";
 
 // When this many (or fewer) lines remain, solve the endgame exactly with
 // negamax + alpha-beta + transposition table instead of running MCTS.
@@ -63,7 +74,13 @@ function buildBoard(W, H) {
             lineBoxes[vLineId(y, x + 1)].push(bi);
         }
     }
-    return { W, H, nH, nV, L, boxes, lineBoxes };
+    // Precomputed single-bit masks (audit #6): withLine() ORs these in
+    // instead of shifting 1n on every call -- the shift showed up hot in
+    // the solver and rollout profiles.
+    const hMasks = [], vMasks = [];
+    for (let i = 0; i < nH; i++) hMasks.push(1n << BigInt(i));
+    for (let i = 0; i < nV; i++) vMasks.push(1n << BigInt(i));
+    return { W, H, nH, nV, L, boxes, lineBoxes, hMasks, vMasks };
 }
 
 // Convert the DotGame (hLines, vLines) matrices to bitboards.
@@ -87,6 +104,16 @@ function boxSides(b, box, hBits, vBits) {
     return popcount(hBits & box.hMask) + popcount(vBits & box.vMask);
 }
 
+// Box side counts for every box, computed from scratch. Used once for the
+// MCTS root; child nodes derive theirs from the parent instead (audit #1).
+function computeSides(b, hBits, vBits) {
+    const sides = new Uint8Array(b.boxes.length);
+    for (let bi = 0; bi < sides.length; bi++) {
+        sides[bi] = boxSides(b, b.boxes[bi], hBits, vBits);
+    }
+    return sides;
+}
+
 function emptyLines(b, hBits, vBits) {
     const ids = [];
     for (let id = 0; id < b.nH; id++) {
@@ -96,6 +123,87 @@ function emptyLines(b, hBits, vBits) {
         if ((vBits & (1n << BigInt(id - b.nH))) === 0n) ids.push(id);
     }
     return ids;
+}
+
+// ---------------------------------------------------------------------------
+// MCTS-with-cutoff helpers.
+//
+// WHERE THE CUTOFF LIVES (two places, both exact, no approximation):
+//  (1) TREE: a node whose position is fully decomposed is a LEAF. It is
+//      never expanded (its children are never created); its value on
+//      first visit is the exact ControlValue tail converted to AI boxes
+//      (see exactAiGained below). Children of decomposed positions stay
+//      decomposed, so this is stable: once the tree reaches decomposition,
+//      every descendant value would be exact too, but there is nothing
+//      left to learn by expanding — the node's value is already exact.
+//      Special case: a decomposed ROOT has no move choice from its own
+//      value, so runMCTSCutoff evaluates its children one ply deep with
+//      ControlValue instead (each child is a decomposed leaf, so that
+//      one-ply evaluation is exact, not an approximation).
+//  (2) ROLLOUT: a rollout that reaches a decomposed position TRUNCATES
+//      there and scores the tail exactly with ControlValue instead of
+//      playing the biased rollout policy to the end. Rollout sides only
+//      increase along a rollout, so decomposition, once reached, persists
+//      — truncation loses nothing the rollout policy would have added
+//      except its bias.
+// The reward convention is unchanged: (aiSquares + gained) / squaresLeft,
+// where gained is AI boxes from the leaf node onward (exact at cutoff).
+// ---------------------------------------------------------------------------
+
+// Boxes the AI closes from a FULLY DECOMPOSED position onward, under
+// optimal play. controlValue returns the differential D for the player to
+// move over the U unclaimed boxes; the player to move gains (U + D) / 2
+// and the other player gains (U - D) / 2 (U and D always share parity,
+// since the two gains sum to U and differ by D).
+function exactAiGained(b, hBits, vBits, sides, turn) {
+    const cv = controlValue(b, hBits, vBits, sides);
+    const playerGains = (cv.unclaimed + cv.value) / 2;
+    return turn === 1 ? playerGains : cv.unclaimed - playerGains;
+}
+
+// Decomposition-distance proxy for the near-window gate (see
+// passesNearGate below). deficit = sum over low boxes (0 or 1 sides) of
+// (2 - sides): a 0-sided box needs 2 side increments, a 1-sided box
+// needs 1. One move increments at most 2 boxes (the boxes adjacent to
+// the drawn line), so lbPlies = ceil(deficit / 2) is a LOWER bound on
+// the number of plies before any decomposition can be reached — the
+// true distance is >= lbPlies, never less. It is O(boxes), computed
+// from the sides array the tree already maintains.
+function decompositionStats(sides) {
+    let low = 0, deficit = 0;
+    for (let i = 0; i < sides.length; i++) {
+        if (sides[i] < 2) { low++; deficit += 2 - sides[i]; }
+    }
+    return { low, deficit, lbPlies: Math.ceil(deficit / 2), decomposed: low === 0 };
+}
+
+// THE GATE (defined in the harness, see cutoff-gate.mjs). MCTS-with-
+// cutoff is used only when BOTH hold:
+//   (a) the plain exact solver does not already apply: empties > 27
+//       (SOLVER_MAX_MOVES — the solver-first branch in move() handles
+//       everything at or below that, exactly, so cutoff-MCTS never
+//       competes with it); and
+//   (b) decomposition is within reach: lbPlies <= GATE_MAX_LB_PLIES.
+// GATE_MAX_LB_PLIES = 6 is the TESTED near window, not a winning one:
+// gate measurements (cutoff-gate.mjs) show rollout truncation is 100%
+// at every lb, but mean plies-to-truncation grows with lb (10.1 at
+// lb=1 to 26.5 at lb=12), so lb <= 6 keeps the exact anchor within
+// ~19 mean rollout plies; and the plain solver aborted 7/7 probed
+// positions at E > 27. VALIDATION VERDICT (see harness cutoff report):
+// full MCTS-with-cutoff does NOT beat the original heuristic anywhere
+// in this window at Intermediate (all buckets negative) or at Master
+// (overall -1.32 boxes/game; only the lb 1-3 Master cell is positive,
+// +3.0 +- 2.78, not significant). So the gate is retained as the
+// definition of the tested window, but the flag stays OFF — there is
+// no lb sub-range in which the full cutoff reliably wins. The tree-only
+// diagnostic variant at Master (+1.80 +- 1.61, n=30) is suggestive but
+// unconfirmed and is NOT wired in on this evidence.
+const GATE_MAX_LB_PLIES = 6;
+function passesNearGate(b, hBits, vBits, sides) {
+    const empties = emptyLines(b, hBits, vBits).length;
+    const st = decompositionStats(sides);
+    return { pass: empties > SOLVER_MAX_MOVES && st.lbPlies <= GATE_MAX_LB_PLIES,
+             empties, ...st, maxLbPlies: GATE_MAX_LB_PLIES };
 }
 
 // Number of boxes closed by playing lineId on (hBits, vBits). Pure: the
@@ -109,8 +217,8 @@ function boxesClosedBy(b, hBits, vBits, lineId) {
 }
 
 function withLine(b, hBits, vBits, lineId) {
-    if (lineId < b.nH) return { hBits: hBits | (1n << BigInt(lineId)), vBits };
-    return { hBits, vBits: vBits | (1n << BigInt(lineId - b.nH)) };
+    if (lineId < b.nH) return { hBits: hBits | b.hMasks[lineId], vBits };
+    return { hBits, vBits: vBits | b.vMasks[lineId - b.nH] };
 }
 
 function lineToString(b, id) {
@@ -254,7 +362,7 @@ function toMatrices(b, hBits, vBits) {
 // Epsilon-greedy: with probability epsilon, pick a random move instead of
 // the heuristic move. This adds rollout diversity — pure heuristic rollouts
 // are too deterministic, which hurts MCTS value estimates.
-function rolloutHeuristic(b, hBits, vBits, turn, heuristic, epsilon) {
+function rolloutHeuristic(b, hBits, vBits, turn, heuristic, epsilon, useCutoff = false, stats = null) {
     const { h, v } = toMatrices(b, hBits, vBits);
     const W = b.W, H = b.H;
     // squares[i][j]: side count for box (i,j). i in [0,H), j in [0,W).
@@ -271,6 +379,21 @@ function rolloutHeuristic(b, hBits, vBits, turn, heuristic, epsilon) {
     for (let i = 0; i < W; i++) for (let j = 0; j <= H; j++) if (!h[i][j]) movesLeft++;
     for (let i = 0; i < H; i++) for (let j = 0; j <= W; j++) if (!v[i][j]) movesLeft++;
     while (movesLeft > 0) {
+        // ROLLOUT CUTOFF (heuristic rollout): if the matrix position is
+        // decomposed (no box with 0 or 1 sides), score the tail exactly
+        // and stop. Conversion to bitboards is paid once, at truncation.
+        if (useCutoff) {
+            let decomposed = true;
+            for (let i = 0; i < H && decomposed; i++)
+                for (let j = 0; j < W; j++)
+                    if (squares[i][j] < 2) { decomposed = false; break; }
+            if (decomposed) {
+                const bits = fromMatrices(b, h, v);
+                const sd = computeSides(b, bits.hBits, bits.vBits);
+                if (stats) stats.rolloutTruncations++;
+                return aiBoxes + exactAiGained(b, bits.hBits, bits.vBits, sd, cur);
+            }
+        }
         let m;
         if (Math.random() < epsilon) {
             // Random move: pick a random empty line.
@@ -319,27 +442,42 @@ function rolloutHeuristic(b, hBits, vBits, turn, heuristic, epsilon) {
 
 // Plays to the end from (hBits, vBits) with `turn` to move. Returns the
 // number of boxes the AI (turn === 1) closes during the rollout.
-function rollout(b, hBits, vBits, turn, epsilon) {
-    const sides = new Uint8Array(b.boxes.length);
-    for (let bi = 0; bi < sides.length; bi++) {
-        sides[bi] = boxSides(b, b.boxes[bi], hBits, vBits);
-    }
+// `sides` is the caller's box-side counts for this position (audit #1);
+// a local copy is played forward so the caller's array is never mutated.
+function rollout(b, hBits, vBits, turn, epsilon, sides, useCutoff = false, stats = null) {
+    const s = sides.slice();
     const empty = emptyLines(b, hBits, vBits);
     let aiBoxes = 0, cur = turn;
+    // ROLLOUT CUTOFF: a rollout starting in a decomposed position scores
+    // exactly without playing a single rollout move.
+    if (useCutoff && isDecomposed(s)) {
+        if (stats) { stats.rolloutTruncations++; stats.truncPlies = (stats.truncPlies || 0); }
+        return aiBoxes + exactAiGained(b, hBits, vBits, s, cur);
+    }
+    let plies = 0;
     while (empty.length > 0) {
-        const idx = pickRolloutIndex(b, empty, sides, epsilon);
+        const idx = pickRolloutIndex(b, empty, s, epsilon);
         const lineId = empty[idx];
         empty[idx] = empty[empty.length - 1];
         empty.pop();
-        if (lineId < b.nH) hBits |= 1n << BigInt(lineId);
-        else vBits |= 1n << BigInt(lineId - b.nH);
+        if (lineId < b.nH) hBits |= b.hMasks[lineId];
+        else vBits |= b.vMasks[lineId - b.nH];
         let closed = 0;
         for (const bi of b.lineBoxes[lineId]) {
-            if (++sides[bi] === 4) closed++;
+            if (++s[bi] === 4) closed++;
         }
         if (cur === 1) aiBoxes += closed;
         if (closed === 0) cur = 1 - cur;
+        plies++;
+        // ROLLOUT CUTOFF: truncate at the first decomposed position and
+        // score the tail exactly. Sides only increase, so decomposition
+        // persists for the rest of this rollout.
+        if (useCutoff && isDecomposed(s)) {
+            if (stats) { stats.rolloutTruncations++; stats.truncPlies = (stats.truncPlies || 0) + plies; }
+            return aiBoxes + exactAiGained(b, hBits, vBits, s, cur);
+        }
     }
+    if (stats) stats.rolloutFull++;
     return aiBoxes;
 }
 
@@ -347,7 +485,7 @@ function rollout(b, hBits, vBits, turn, epsilon) {
 // MCTS
 // ---------------------------------------------------------------------------
 class MNode {
-    constructor(b, hBits, vBits, turn, parent, move, aiSquares) {
+    constructor(b, hBits, vBits, turn, parent, move, aiSquares, sides = null, untried = null) {
         this.hBits = hBits;
         this.vBits = vBits;
         this.turn = turn;      // 1 = AI to move, 0 = opponent
@@ -357,7 +495,15 @@ class MNode {
         this.children = [];
         this.visits = 0;
         this.value = 0;        // sum of AI-box-fraction rewards
-        this.untried = emptyLines(b, hBits, vBits);
+        // Audit #1/#3: the root computes from scratch; a child receives
+        // both derived from its parent (see the expansion step: sides are
+        // the parent's incremented for the played line, untried is the
+        // parent's full move set minus the played line, with already-
+        // expanded sibling moves added back).
+        this.sides = sides ?? computeSides(b, hBits, vBits);
+        this.untried = untried ?? emptyLines(b, hBits, vBits);
+        // TREE CUTOFF flag: a decomposed node is a leaf — never expanded.
+        this.decomposed = isDecomposed(this.sides);
     }
 }
 
@@ -380,15 +526,135 @@ function selectChild(node) {
     return best;
 }
 
+// Synchronous MCTS-with-cutoff. opts: { iterations, thinkMs, epsilon,
+// useHeuristicRollouts, heuristic, deadline }. Iteration budget wins
+// over the time budget when both are given (harness use); move() passes
+// thinkMs only. Returns { move: lineId, iterations, stats, rootStats }.
+// A decomposed root is handled by exact one-ply evaluation (see the
+// TREE CUTOFF note above): each child is a decomposed leaf, so picking
+// the child with the best exact AI total is exact, not approximate.
+// Ties are broken randomly (MCTS is stochastic anyway).
+// Internal MCTS loop shared by the cutoff and plain (ablation) runners.
+// useCutoff=false reproduces the legacy plain MCTS: decomposed nodes are
+// expanded normally and rollouts play to the end. The plain runner exists
+// so harness ablations can isolate the cutoff's contribution at equal
+// budgets; move() never uses it.
+function runMCTSInternal(b, hBits, vBits, squaresLeft, opts = {}, useCutoff = true) {
+    const epsilon = opts.epsilon ?? 0.15;
+    const heuristic = opts.heuristic ?? null;
+    const useHeuristicRollouts = !!opts.useHeuristicRollouts;
+    // Diagnostic variant: rolloutCutoff=false keeps the TREE cutoff
+    // (decomposed nodes are exact leaves) but lets rollouts play to the
+    // end. The full cutoff (default) truncates rollouts too. The flag
+    // exists because rollout truncation pays a cold ControlValue call
+    // per rollout (heavy-tailed: median 0.01ms, mean ~4ms, max 522ms in
+    // harness profile2), which starves the tree at level time budgets;
+    // tree-only is the measured alternative, not a second implementation.
+    const rolloutCutoff = opts.rolloutCutoff ?? true;
+    const deadline = opts.deadline ?? (opts.thinkMs !== undefined ? Date.now() + opts.thinkMs : Infinity);
+    const maxIterations = opts.iterations ?? opts.maxIterations ?? 500000;
+    const stats = { exactLeaves: 0, rolloutTruncations: 0, rolloutFull: 0, truncPlies: 0, rootDecomposed: false };
+    const root = new MNode(b, hBits, vBits, 1, null, null, 0);
+    if (root.untried.length === 0) return { move: null, iterations: 0, stats, rootStats: [] };
+    if (useCutoff && root.decomposed) {
+        // Exact one-ply: no tree at all is needed.
+        stats.rootDecomposed = true;
+        let best = [], bestAi = -Infinity;
+        for (const lineId of root.untried) {
+            const s = withLine(b, hBits, vBits, lineId);
+            const childSides = root.sides.slice();
+            let closed = 0;
+            for (const bi of b.lineBoxes[lineId]) if (++childSides[bi] === 4) closed++;
+            const childTurn = closed === 0 ? 0 : 1;
+            const tail = exactAiGained(b, s.hBits, s.vBits, childSides, childTurn);
+            const total = closed + tail; // closed>0 keeps AI to move; closed==0 flips, already in tail
+            // NOTE: when closed==0, tail is AI boxes with opponent to move;
+            // when closed>0, tail is AI boxes with AI to move again; in
+            // both cases total = AI boxes from the root onward.
+            if (total > bestAi) { bestAi = total; best = [lineId]; }
+            else if (total === bestAi) best.push(lineId);
+        }
+        return { move: best[(Math.random() * best.length) | 0], iterations: 0, stats, rootStats: [] };
+    }
+    let iters = 0;
+    while (Date.now() < deadline && iters < maxIterations) {
+        iters++;
+        // Selection: descend while fully expanded — but never THROUGH a
+        // decomposed node (it is a leaf; its value is exact).
+        let node = root;
+        while (!(useCutoff && node.decomposed) && node.untried.length === 0 && node.children.length > 0) {
+            node = selectChild(node);
+        }
+        // Expansion: one child per iteration, SKIPPED for decomposed nodes
+        // (cutoff only; plain MCTS expands them normally).
+        if (!(useCutoff && node.decomposed) && node.untried.length > 0) {
+            const pick = (Math.random() * node.untried.length) | 0;
+            const lineId = node.untried.splice(pick, 1)[0];
+            const s = withLine(b, node.hBits, node.vBits, lineId);
+            const childSides = node.sides.slice();
+            let closed = 0;
+            for (const bi of b.lineBoxes[lineId]) {
+                if (++childSides[bi] === 4) closed++;
+            }
+            const childTurn = closed === 0 ? 1 - node.turn : node.turn;
+            const childAi = node.aiSquares + (node.turn === 1 ? closed : 0);
+            const siblingMoves = node.children.map(c => c.move);
+            const child = new MNode(b, s.hBits, s.vBits, childTurn, node,
+                                    lineId, childAi, childSides,
+                                    node.untried.concat(siblingMoves));
+            node.children.push(child);
+            node = child;
+        }
+        // Leaf value: exact for decomposed nodes, truncated rollout else
+        // (cutoff only; plain MCTS always plays the full rollout).
+        let gained;
+        if (useCutoff && node.decomposed) {
+            stats.exactLeaves++;
+            gained = exactAiGained(b, node.hBits, node.vBits, node.sides, node.turn);
+        } else if (useHeuristicRollouts && heuristic) {
+            gained = rolloutHeuristic(b, node.hBits, node.vBits, node.turn, heuristic, epsilon, useCutoff && rolloutCutoff, stats);
+        } else {
+            gained = rollout(b, node.hBits, node.vBits, node.turn, epsilon, node.sides, useCutoff && rolloutCutoff, stats);
+        }
+        const reward = (node.aiSquares + gained) / squaresLeft;
+        let n = node;
+        while (n) { n.visits++; n.value += reward; n = n.parent; }
+    }
+    if (root.children.length === 0) return { move: root.untried[0], iterations: iters, stats, rootStats: [] };
+    const best = root.children.reduce((a, c) => (c.visits > a.visits ? c : a));
+    const rootStats = root.children
+        .map(c => ({ move: lineToString(b, c.move), visits: c.visits, value: c.value / c.visits }))
+        .sort((a, z) => z.visits - a.visits);
+    return { move: best.move, iterations: iters, stats, rootStats };
+}
+
+function runMCTSCutoff(b, hBits, vBits, squaresLeft, opts = {}) {
+    return runMCTSInternal(b, hBits, vBits, squaresLeft, opts, true);
+}
+function runMCTSPlain(b, hBits, vBits, squaresLeft, opts = {}) {
+    return runMCTSInternal(b, hBits, vBits, squaresLeft, opts, false);
+}
+
 export default class AIEngineHybrid {
     constructor(options = {}) {
         this.epsilon = options.epsilon ?? 0.15;
         this.maxIterations = options.maxIterations ?? 500000;
         this.thinkMs = options.thinkMs ?? 1400;
         this.useHeuristicRollouts = !!options.useHeuristicRollouts;
+        // MCTS-with-cutoff: OFF by default, and VERDICTED OFF (see the
+        // harness cutoff report): it does not beat the original
+        // heuristic in the near window at Intermediate or Master, so a
+        // later cascade agent must NOT turn this on without new,
+        // confirmatory evidence. This flag alone does NOT gate: move()
+        // additionally requires passesNearGate (empties > 27 and
+        // lbPlies <= 6) before using it.
+        this.mctsCutoff = !!options.mctsCutoff;
+        this.cutoffRollouts = options.cutoffRollouts ?? true;
         this.heuristic = new AIEngineHeuristic();
         this.lastIterations = 0;   // iterations used by the most recent move()
         this.lastExact = false;    // true if the exact solver (not MCTS) chose the move
+        this.lastCutoff = false;   // true if MCTS-with-cutoff (not plain MCTS) chose the move
+        this.lastCutoffStats = null;
         this.lastRootStats = null;
         this.debugStats = !!options.debugStats;
     }
@@ -430,6 +696,30 @@ export default class AIEngineHybrid {
             return lineToString(b, moves[idx]);
         }
 
+        // 3a) MCTS-with-cutoff, gated to the near window (flag OFF by
+        // default; gate also requires empties > 27 and lbPlies <= 6).
+        // Outside the gate, plain MCTS below is used unchanged.
+        if (this.mctsCutoff) {
+            const rootSides = computeSides(b, hBits, vBits);
+            const gate = passesNearGate(b, hBits, vBits, rootSides);
+            if (gate.pass) {
+                const r = runMCTSCutoff(b, hBits, vBits, squaresLeft, {
+                    deadline, epsilon: this.epsilon,
+                    useHeuristicRollouts: this.useHeuristicRollouts,
+                    heuristic: this.heuristic, maxIterations: this.maxIterations,
+                    rolloutCutoff: this.cutoffRollouts,
+                });
+                this.lastIterations = r.iterations;
+                this.lastExact = false;
+                this.lastCutoff = true;
+                this.lastCutoffStats = r.stats;
+                if (this.debugStats) this.lastRootStats = r.rootStats;
+                return lineToString(b, r.move);
+            }
+        }
+        this.lastCutoff = false;
+        this.lastCutoffStats = null;
+
         // 3) Bitboard MCTS with a time-based budget.
         const root = new MNode(b, hBits, vBits, 1, null, null, 0);
         let iters = 0;
@@ -447,10 +737,25 @@ export default class AIEngineHybrid {
                 const pick = (Math.random() * node.untried.length) | 0;
                 const lineId = node.untried.splice(pick, 1)[0];
                 const s = withLine(b, node.hBits, node.vBits, lineId);
-                const closed = boxesClosedBy(b, s.hBits, s.vBits, lineId);
+                // Audit #1: the child's box-side counts are the parent's,
+                // incremented for the played line's boxes. Counting closes
+                // off the increments is identical to boxesClosedBy().
+                const childSides = node.sides.slice();
+                let closed = 0;
+                for (const bi of b.lineBoxes[lineId]) {
+                    if (++childSides[bi] === 4) closed++;
+                }
                 const childTurn = closed === 0 ? 1 - node.turn : node.turn;
                 const childAi = node.aiSquares + (node.turn === 1 ? closed : 0);
-                const child = new MNode(b, s.hBits, s.vBits, childTurn, node, lineId, childAi);
+                // Audit #3: the child's untried moves are the parent's full
+                // move set minus the move just played. node.untried already
+                // had lineId spliced out, but it is ALSO missing the moves
+                // expanded into earlier siblings -- those are still empty
+                // in the child's position, so add them back.
+                const siblingMoves = node.children.map(c => c.move);
+                const child = new MNode(b, s.hBits, s.vBits, childTurn, node,
+                                        lineId, childAi, childSides,
+                                        node.untried.concat(siblingMoves));
                 node.children.push(child);
                 node = child;
             }
@@ -458,7 +763,7 @@ export default class AIEngineHybrid {
             // Rollout + backpropagation.
             const gained = this.useHeuristicRollouts
                 ? rolloutHeuristic(b, node.hBits, node.vBits, node.turn, this.heuristic, this.epsilon)
-                : rollout(b, node.hBits, node.vBits, node.turn, this.epsilon);
+                : rollout(b, node.hBits, node.vBits, node.turn, this.epsilon, node.sides);
             const reward = (node.aiSquares + gained) / squaresLeft;
             let n = node;
             while (n) { n.visits++; n.value += reward; n = n.parent; }
@@ -478,4 +783,4 @@ export default class AIEngineHybrid {
 }
 
 // Named exports for unit testing.
-export { buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, boxesClosedBy, SOLVER_MAX_MOVES };
+export { buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, boxesClosedBy, SOLVER_MAX_MOVES, runMCTSCutoff, runMCTSPlain, passesNearGate, decompositionStats, GATE_MAX_LB_PLIES, exactAiGained };
