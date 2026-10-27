@@ -30,7 +30,7 @@ export default class DotGame {
         setupTestCase(
             this,
             testing ? testSel.options[testSel.selectedIndex].value : 0,
-            testAIEl ? testAIEl.value : 'ai-hybrid'
+            testAIEl ? testAIEl.value : 'ai'
         );
 
         const canvas = this.ctx.canvas;

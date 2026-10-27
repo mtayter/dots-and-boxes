@@ -17,7 +17,7 @@ import { controlValue, computeSides, isDecomposed, extractComponents } from "./C
 // always satisfy U <= 25, so this gate never changes 5x5 play and the
 // component-(a) verification (cases 1-9 identity, cases 10/11 flip,
 // 837-position non-decomposed identity) is unaffected by construction.
-// AIEngineLeveled applies the same gate before calling chooseMove so
+// AIEngine applies the same gate before calling chooseMove so
 // the cascade's step-1 attribution is explicit; this in-branch gate is
 // the backstop that makes the cap hold for every caller.
 //
@@ -37,7 +37,7 @@ import { controlValue, computeSides, isDecomposed, extractComponents } from "./C
 // evaluatorBudgetMs elapses between child evaluations. Worst case is
 // then deadline + one child evaluation, not minutes. Default budget
 // 1200ms (80% of the 1500ms VM budget), shared by AIEngineHeuristic
-// and AIEngineLeveled — the budgets are intentionally identical.
+// and AIEngine — the budgets are intentionally identical.
 export const EVALUATOR_MAX_UNCLAIMED = 30;
 export const EVALUATOR_MAX_COMPONENTS = 10;
 export const EVALUATOR_BUDGET_MS = 1200;
@@ -59,7 +59,7 @@ export default class AIEngineHeuristic {
         this.evaluatorBudgetMs = EVALUATOR_BUDGET_MS;
         // Set by chooseMove: true iff the evaluator branch timed out on
         // the most recent call (false when the branch was not entered or
-        // completed). Lets AIEngineLeveled fall through to minimax on a
+        // completed). Lets AIEngine fall through to minimax on a
         // branch timeout instead of returning the fallback move as an
         // 'evaluator' decision.
         this.evaluatorTimedOut = false;
