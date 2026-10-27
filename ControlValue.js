@@ -47,10 +47,10 @@
 // differential (player to move minus opponent) over the UNCLAIMED boxes
 // only, under optimal play. Banked boxes are the caller's business.
 //
-// Also included: an exact solver (clone of AIEngineHybrid's solveRec,
+// Also included: an exact solver (clone of the retired hybrid engine's solveRec,
 // returning the value) used for validation.
 
-import { buildBoard, fromMatrices, emptyLines } from "./AIEngineHybrid.js";
+import { buildBoard, fromMatrices, emptyLines } from "./Board.js";
 
 function popcount(b) {
     let c = 0;
@@ -310,7 +310,7 @@ export function controlValue(b, hBits, vBits, sides) {
 }
 
 // ---------------------------------------------------------------------------
-// Exact solver returning the value (clone of AIEngineHybrid's solveRec:
+// Exact solver returning the value (clone of the retired hybrid engine's solveRec:
 // negamax + alpha-beta, TT caches only non-pruned values). Returns the net
 // differential for the player to move, or null if the node cap is hit.
 // ---------------------------------------------------------------------------

@@ -59,6 +59,7 @@
 import AIEngineHeuristic, { EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS } from "./AIEngineHeuristic.js";
 import { solveRootCutoff, SolverAbort as CutoffAbort } from "./SolverCutoff.js";
 import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js";
+import { buildBoard, fromMatrices, emptyLines, lineToString, boxesClosedBy } from "./Board.js";
 // NOTE (2026-10-26, component (b) integration): phase 4 now solves via
 // SolverCutoff's decomposition-cutoff solver instead of the plain expansion
 // solver below. Import chain AIEngine -> SolverCutoff -> Hybrid/ControlValue
@@ -162,93 +163,27 @@ function popcount(b) {
 }
 
 // ---------------------------------------------------------------------------
-// Bitboard board description (as in AIEngineHybrid / AIEngineHybridStaged)
+// Board helpers (buildBoard, fromMatrices, emptyLines, lineToString,
+// boxesClosedBy) now live in Board.js and are imported below; the engine
+// re-exports the ones its harness-facing surface needs.
 // ---------------------------------------------------------------------------
-function buildBoard(W, H) {
-    const nH = W * (H + 1);
-    const nV = (W + 1) * H;
-    const L = nH + nV;
-    const hLineId = (i, j) => i * (H + 1) + j;
-    const vLineId = (i, j) => nH + i * (W + 1) + j;
-    const vBit = (i, j) => i * (W + 1) + j;
-    const boxes = [];
-    const lineBoxes = Array.from({ length: L }, () => []);
-    for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-            const hMask = (1n << BigInt(hLineId(x, y))) | (1n << BigInt(hLineId(x, y + 1)));
-            const vMask = (1n << BigInt(vBit(y, x))) | (1n << BigInt(vBit(y, x + 1)));
-            const bi = boxes.length;
-            boxes.push({ hMask, vMask });
-            lineBoxes[hLineId(x, y)].push(bi);
-            lineBoxes[hLineId(x, y + 1)].push(bi);
-            lineBoxes[vLineId(y, x)].push(bi);
-            lineBoxes[vLineId(y, x + 1)].push(bi);
-        }
-    }
-    // Precomputed single-bit masks (same convention as AIEngineHybrid:
-    // hMasks[i] = 1n << i over h-line ids, vMasks[i] = 1n << i over
-    // offset-free v-line ids). Required by the cutoff path: ControlValue's
-    // lineTaken/extractComponents read b.hMasks/b.vMasks.
-    const hMasks = [], vMasks = [];
-    for (let i = 0; i < nH; i++) hMasks.push(1n << BigInt(i));
-    for (let i = 0; i < nV; i++) vMasks.push(1n << BigInt(i));
-    return { W, H, nH, nV, L, boxes, lineBoxes, hMasks, vMasks };
-}
 
-function fromMatrices(b, h, v) {
-    let hBits = 0n, vBits = 0n;
-    for (let i = 0; i < b.W; i++) {
-        for (let j = 0; j <= b.H; j++) {
-            if (h[i][j]) hBits |= 1n << BigInt(i * (b.H + 1) + j);
-        }
-    }
-    for (let i = 0; i < b.H; i++) {
-        for (let j = 0; j <= b.W; j++) {
-            if (v[i][j]) vBits |= 1n << BigInt(i * (b.W + 1) + j);
-        }
-    }
-    return { hBits, vBits };
-}
 
 function boxSides(b, box, hBits, vBits) {
     return popcount(hBits & box.hMask) + popcount(vBits & box.vMask);
 }
 
-function emptyLines(b, hBits, vBits) {
-    const ids = [];
-    for (let id = 0; id < b.nH; id++) {
-        if ((hBits & (1n << BigInt(id))) === 0n) ids.push(id);
-    }
-    for (let id = b.nH; id < b.L; id++) {
-        if ((vBits & (1n << BigInt(id - b.nH))) === 0n) ids.push(id);
-    }
-    return ids;
-}
 
-function boxesClosedBy(b, hBits, vBits, lineId) {
-    let closed = 0;
-    for (const bi of b.lineBoxes[lineId]) {
-        if (boxSides(b, b.boxes[bi], hBits, vBits) === 4) closed++;
-    }
-    return closed;
-}
 
 function withLine(b, hBits, vBits, lineId) {
     if (lineId < b.nH) return { hBits: hBits | (1n << BigInt(lineId)), vBits };
     return { hBits, vBits: vBits | (1n << BigInt(lineId - b.nH)) };
 }
 
-function lineToString(b, id) {
-    if (id < b.nH) {
-        return 'h,' + Math.floor(id / (b.H + 1)) + ',' + (id % (b.H + 1));
-    }
-    const k = id - b.nH;
-    return 'v,' + Math.floor(k / (b.W + 1)) + ',' + (k % (b.W + 1));
-}
 
 // ---------------------------------------------------------------------------
 // Exact solver: negamax + alpha-beta + transposition table (corrected
-// version, identical to AIEngineHybrid's: fresh TT per root move, only
+// version, identical to the retired hybrid engine's: fresh TT per root move, only
 // non-pruned values are cached). Returns via solveRoot the best lineId.
 // ---------------------------------------------------------------------------
 class SolverAbort extends Error {}
@@ -331,7 +266,7 @@ function solveRoot(b, hBits, vBits, moves, deadline = Date.now() + 2000) {
 }
 
 // ---------------------------------------------------------------------------
-// Rollouts (from AIEngineHybridStaged): dumb epsilon-greedy policy, and the
+// Rollouts (from the archived AIEngineHybridStaged): dumb epsilon-greedy policy, and the
 // structure-gated rollout — dumb until any box reaches >= 2 sides, then the
 // heuristic (epsilon-greedy) finishes the game.
 // ---------------------------------------------------------------------------

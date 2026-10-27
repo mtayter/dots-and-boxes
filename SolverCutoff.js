@@ -64,7 +64,7 @@
 // Exactness is NEVER traded: when the cutoff is skipped for cost
 // reasons, the node is expanded normally, which is exact too.
 
-import { buildBoard, fromMatrices, emptyLines } from "./AIEngineHybrid.js";
+import { buildBoard, fromMatrices, emptyLines } from "./Board.js";
 import { extractComponents, componentGameValue, getAnomalies } from "./ControlValue.js";
 
 class SolverAbort extends Error {}

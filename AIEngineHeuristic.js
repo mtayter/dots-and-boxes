@@ -1,4 +1,4 @@
-import { buildBoard, fromMatrices, emptyLines } from "./AIEngineHybrid.js";
+import { buildBoard, fromMatrices, emptyLines } from "./Board.js";
 import { controlValue, computeSides, isDecomposed, extractComponents } from "./ControlValue.js";
 
 // EVALUATOR GATE (component (d) cascade, 2026-10-26): the evaluator
@@ -101,7 +101,7 @@ export default class AIEngineHeuristic {
         // below, unchanged (this branch consumes no Math.random, so the
         // fall-through random stream is identical to the pre-branch code).
         // Move-convention note: bitboard line ids map back exactly as
-        // AIEngineHybrid.lineToString does: h id -> ['h', col, row],
+        // Board.lineToString does: h id -> ['h', col, row],
         // v id -> ['v', row, col], matching this engine's ['h', j, i] /
         // ['v', i, j] returns (h[j][i] / v[i][j]).
         {
