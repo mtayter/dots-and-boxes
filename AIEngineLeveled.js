@@ -22,12 +22,8 @@
 //                       step (component (c) verdict NO).
 //   Phase 3 (offer):    one or more offered components (regions of
 //                       2-3-sided boxes containing a 3-sided box) ->
-//                       AIEngineHeuristic play. Exactly one offer uses the
-//                       heuristic's own controller; multiple simultaneous
-//                       offers use the extended controller below (chains
-//                       first, loop last, per-component give-back while
-//                       other long components remain, final component
-//                       taken whole). MCTS never plays offered positions.
+//                       AIEngineHeuristic play. MCTS never plays offered
+//                       positions.
 //   Phase 1 (quiet):    no offers and E > 0 -> heuristic move (in the
 //                       pre-structure opening its play is a random
 //                       safe move anyway; MCTS has no signal to find
@@ -556,51 +552,6 @@ function countOfferedRegions(heuristic, h, v) {
     return offeredRegions(heuristic, h, v).offered.length;
 }
 
-// Extended controller for MULTIPLE simultaneous offers (design confirmed
-// 2026-10-23). The heuristic's own controllerMove handles exactly one
-// offered region; this sequences several: chains first, loop last. For
-// the chosen region R it mirrors controllerMove's per-region logic —
-// give-back play (take down toward the handout point, or ripen) while
-// other long components remain, and take R whole when it is effectively
-// the final long component. Per-move sequencing emerges naturally: box
-// takes keep the turn, so successive move() calls work through the
-// remaining offers; a ripen hands the turn over with offers outstanding,
-// exactly as in single-offer control play. Returns [type, i, j] or null.
-function controllerMultiMove(heuristic, regions, offered) {
-    const chains = offered.filter(r => !heuristic.isLoop(r));
-    const loops = offered.filter(r => heuristic.isLoop(r));
-    const pool = chains.length > 0 ? chains : loops; // chains first, loop last
-    pool.sort((a, b) => b.length - a.length);        // largest first
-    const R = pool[0];
-    const rset = new Set(R.map(([i, j]) => i + ',' + j));
-
-    // Other significant components (offered or not) beyond R.
-    let otherLong = 0;
-    for (const r of regions) {
-        if (r !== R && r.length >= 3) otherLong++;
-    }
-    const threesIn = (region) => region.filter(([i, j]) => heuristic.squares[i][j] === 3);
-    const allThrees = regions.flatMap(threesIn);
-    if (otherLong === 0) {
-        // Final significant component(s): take whole, sweeping all offers.
-        return heuristic.greedyTake(allThrees);
-    }
-    const n = R.length;
-    const openings = threesIn(R);
-    let m = null;
-    if (heuristic.isLoop(R)) {
-        m = n > 4 ? heuristic.takeOne(R) : heuristic.doubleLoony(R, rset);
-    } else if (openings.length <= 1) {
-        if (n > 2) m = heuristic.untakenEdges(openings[0][0], openings[0][1])[0];
-        else if (n === 2) m = heuristic.chainDoubleCross(R, rset);
-    } else {
-        m = n > 4 ? heuristic.takeOne(R)
-                  : (heuristic.doubleLoony(R, rset) || heuristic.chainDoubleCross(R, rset));
-    }
-    // Fallbacks mirror controllerMove -> chooseMove: take within R, then any.
-    return m || heuristic.greedyTake(openings) || heuristic.greedyTake(allThrees);
-}
-
 export default class AIEngineLeveled {
     constructor(options = {}) {
         this.epsilon = options.epsilon ?? 0.15;
@@ -688,19 +639,14 @@ export default class AIEngineLeveled {
         // reaching here are gated out of the evaluator branch, so
         // chooseMove's controller/opener logic decides (bounded).
         // Offer detection (Phase 3 vs quiet), using the heuristic's regions.
-        const { regions, offered } = offeredRegions(this.heuristic, h, v);
+        const { offered } = offeredRegions(this.heuristic, h, v);
 
-        // Phase 3: any offer -> heuristic play. Exactly one offer uses the
-        // heuristic's own controller; several use the extended controller.
-        if (offered.length === 1) {
+        // Phase 3: any offer -> heuristic play. (The extended multi-offer
+        // controller was removed 2026-10-27: seat-balanced evals showed it
+        // losing to plain heuristic play at every size, worst at 10x10.)
+        if (offered.length >= 1) {
             this.lastPhase = 'heuristic-offer';
             const m = this.heuristic.chooseMove(h, v);
-            return m[0] + ',' + m[1] + ',' + m[2];
-        }
-        if (offered.length >= 2) {
-            this.lastPhase = 'heuristic-offer';
-            const m = controllerMultiMove(this.heuristic, regions, offered)
-                || this.heuristic.chooseMove(h, v);
             return m[0] + ',' + m[1] + ',' + m[2];
         }
 
@@ -724,4 +670,4 @@ export default class AIEngineLeveled {
     }
 }
 
-export { iterationsFor, msPerIterFor, buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, runMCTS, countOfferedRegions, offeredRegions, controllerMultiMove, minimaxLinesFor, EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS };
+export { iterationsFor, msPerIterFor, buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, runMCTS, countOfferedRegions, offeredRegions, minimaxLinesFor, EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS };
