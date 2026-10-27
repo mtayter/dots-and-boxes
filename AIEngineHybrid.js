@@ -191,13 +191,14 @@ function decompositionStats(sides) {
 // ~19 mean rollout plies; and the plain solver aborted 7/7 probed
 // positions at E > 27. VALIDATION VERDICT (see harness cutoff report):
 // full MCTS-with-cutoff does NOT beat the original heuristic anywhere
-// in this window at Intermediate (all buckets negative) or at Master
-// (overall -1.32 boxes/game; only the lb 1-3 Master cell is positive,
-// +3.0 +- 2.78, not significant). So the gate is retained as the
-// definition of the tested window, but the flag stays OFF — there is
-// no lb sub-range in which the full cutoff reliably wins. The tree-only
-// diagnostic variant at Master (+1.80 +- 1.61, n=30) is suggestive but
-// unconfirmed and is NOT wired in on this evidence.
+// in this window at the 375ms VM budget (all buckets negative) or at
+// the 1500ms VM budget (overall -1.32 boxes/game; only the lb 1-3 cell
+// at 1500ms is positive, +3.0 +- 2.78, not significant). So the gate is
+// retained as the definition of the tested window, but the flag stays
+// OFF — there is no lb sub-range in which the full cutoff reliably
+// wins. The tree-only diagnostic variant at the 1500ms VM budget
+// (+1.80 +- 1.61, n=30) is suggestive but unconfirmed and is NOT wired
+// in on this evidence.
 const GATE_MAX_LB_PLIES = 6;
 function passesNearGate(b, hBits, vBits, sides) {
     const empties = emptyLines(b, hBits, vBits).length;
@@ -643,7 +644,7 @@ export default class AIEngineHybrid {
         this.useHeuristicRollouts = !!options.useHeuristicRollouts;
         // MCTS-with-cutoff: OFF by default, and VERDICTED OFF (see the
         // harness cutoff report): it does not beat the original
-        // heuristic in the near window at Intermediate or Master, so a
+        // heuristic in the near window at the 375ms or 1500ms VM budgets, so a
         // later cascade agent must NOT turn this on without new,
         // confirmatory evidence. This flag alone does NOT gate: move()
         // additionally requires passesNearGate (empties > 27 and
