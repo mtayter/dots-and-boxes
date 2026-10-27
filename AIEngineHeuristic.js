@@ -36,10 +36,11 @@ import { controlValue, computeSides, isDecomposed, extractComponents } from "./C
 // the branch abandons (falls through, consuming no Math.random) once
 // evaluatorBudgetMs elapses between child evaluations. Worst case is
 // then deadline + one child evaluation, not minutes. Default budget
-// 100ms (tightest level's 80%-of-VM figure); AIEngineLeveled sets it
-// per level per move (100/300/600/1200ms).
+// 1200ms (80% of the 1500ms VM budget), shared by AIEngineHeuristic
+// and AIEngineLeveled — the budgets are intentionally identical.
 export const EVALUATOR_MAX_UNCLAIMED = 30;
 export const EVALUATOR_MAX_COMPONENTS = 10;
+export const EVALUATOR_BUDGET_MS = 1200;
 
 export default class AIEngineHeuristic {
     constructor() {
@@ -54,9 +55,8 @@ export default class AIEngineHeuristic {
         this.curArea = [];
         this.touchedOnes = [];
         // Per-child evaluator-branch deadline (ms); see gate comment
-        // above. Callers that know their level budget set this before
-        // chooseMove (AIEngineLeveled does, per move); default 100ms.
-        this.evaluatorBudgetMs = 100;
+        // above. Shared by both engines; default 1200ms.
+        this.evaluatorBudgetMs = EVALUATOR_BUDGET_MS;
         // Set by chooseMove: true iff the evaluator branch timed out on
         // the most recent call (false when the branch was not entered or
         // completed). Lets AIEngineLeveled fall through to minimax on a

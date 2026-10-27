@@ -1,8 +1,8 @@
 // AIEngineLeveled.js
 //
-// Leveled 4-phase Dots and Boxes AI. Replaces the think-time slider with a
-// difficulty level (Beginner / Intermediate / Expert / Master, default
-// Master). Design (agreed with Mike, 2026-10-23): commit-or-skip minimax,
+// Leveled 4-phase Dots and Boxes AI, fixed strength (difficulty levels
+// removed 2026-10-27; the engine always uses the single configuration
+// below). Design (agreed with Mike, 2026-10-23): commit-or-skip minimax,
 // crisp either/or phases, no blending. Each move is decided by exactly one
 // stage, checked in this order (cascade, component (d) 2026-10-26):
 //
@@ -14,7 +14,7 @@
 //                       positions fall through.
 //   Step 2 (minimax):   E <= per-size minimaxLines -> minimax-with-cutoff
 //                       (solveRootCutoff) under a REAL deadline (80% of
-//                       the level's VM budget); on timeout it falls
+//                       the 1500ms VM budget); on timeout it falls
 //                       through instead of committing. This replaces the
 //                       old committed phase 4 (24-hour deadline, no bail).
 //   Step 3 (heuristic): everything else -> AIEngineHeuristic play, via
@@ -28,31 +28,32 @@
 //                       first, loop last, per-component give-back while
 //                       other long components remain, final component
 //                       taken whole). MCTS never plays offered positions.
-//   Phase 1 (quiet):    no offers and E > level boundary -> heuristic move
-//                       (in the pre-structure opening its play is a random
-//                       safe move anyway; MCTS has no signal to find there).
-//   Phase 2 (steering): no offers and E <= boundary -> MCTS with the
-//                       level's iteration budget, plain UCB selection with
-//                       the level's tuned Cp, and structure-gated rollouts
+//   Phase 1 (quiet):    no offers and E > 0 -> heuristic move (in the
+//                       pre-structure opening its play is a random
+//                       safe move anyway; MCTS has no signal to find
+//                       there). Phase 2's boundary is 0, so quiet
+//                       positions always take this branch.
+//   Phase 2 (steering): no offers and E <= boundary (0) -> MCTS with
+//                       the fixed iteration budget, plain UCB selection
+//                       with Cp 1.41, and structure-gated rollouts
 //                       (dumb until any box reaches >= 2 sides, then the
 //                       heuristic finishes the rollout). Calibrated OFF
 //                       (boundary 0 everywhere); retained, unreachable.
 //
 // The boundary is capability-calibrated (Stage B): the empty-line count at
-// and below which MCTS at that level's budget demonstrably out-decides the
-// heuristic. It is level- and board-size-dependent; on some level/size
-// combinations it is 0 (MCTS never earns its seat in the quiet phase).
+// and below which MCTS at the fixed budget demonstrably out-decides the
+// heuristic. It is board-size-dependent; it is 0 on every size (MCTS
+// never earns its seat in the quiet phase).
 //
-// Phase-2 budgets are TIME-derived (Mike's decision, 2026-10-23): a level
-// means a consistent per-move thinking time on every board size. Each
-// level has a phone time target (Beginner 0.25s, Intermediate 0.75s,
-// Expert 1.5s, Master 3.0s; phone = 2x VM). Iterations per size =
-// (target / 2) / measured gated ms-per-iteration, measured with this
-// file's runMCTS on quiet ~50%-fill positions, warmed and interleaved
+// Phase-2 budget is TIME-derived (Mike's decision, 2026-10-23): a
+// consistent per-move thinking time on every board size. Phone time
+// target 3.0s (VM budget 1500ms; phone = 2x VM). Iterations per size =
+// 1500 / measured gated ms-per-iteration, measured with this file's
+// runMCTS on quiet ~50%-fill positions, warmed and interleaved
 // (harness/measure-iter.mjs): 5x5 0.396 ms/iter (median, n=12),
-// 7x7 1.050 (n=12), 10x10 4.136 (n=6). Resulting budgets, e.g. Master:
-// 3788 (5x5) / 1429 (7x7) / 363 (10x10); Beginner: 316 / 119 / 30. The
-// measured per-size rates ARE the scaling rule.
+// 7x7 1.050 (n=12), 10x10 4.136 (n=6). Resulting budgets:
+// 3788 (5x5) / 1429 (7x7) / 363 (10x10). The measured per-size rates
+// ARE the scaling rule.
 //
 // Calibration provenance: Stage A (solver cost vs empties -> minimaxLines,
 // phone time = 2x VM time, worst-case rule) and Stage B (quiet-position
@@ -68,8 +69,8 @@ import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js
 // has no cycle (nothing imports AIEngineLeveled). solveRoot stays exported
 // (fixed) for harness/reference use.
 
-// ---- LEVELS: filled from Stage A/B calibration (see header) ----
-// phoneMs = per-move phone time target; iterations derive from it via
+// ---- FIXED CONFIGURATION: filled from Stage A/B calibration (see header) ----
+// Phone time target 3000ms; iterations derive from the VM budget via
 // MS_PER_ITER_ANCHORS below.
 // minimaxLines — RECALIBRATED 2026-10-26 (component (b) integration,
 // supersedes the Stage A 2026-10-23 row). Fixed solver + decomposition
@@ -77,62 +78,57 @@ import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js
 // time x2 <= phoneMs), mixed heur+randquiet sample, 5x5, 30 positions per
 // E at E14-22 (15 at E25-30), measured under 2-4-way VM contention (so
 // contended VM times overstate solo times and the phone=2x rule applied
-// to them is conservative). Binding maxima: E14 346.7ms VM = 693ms phone
-// (busts Beginner 250, passes Intermediate 750); E15 653.4ms = 1306ms
-// phone (passes Expert 1500 and Master 3000); E16 3583.3ms = 7166ms
-// phone (busts both). Hence Beginner 0, Intermediate 14, Expert 15,
-// Master 15 — Expert/Master fall from 16/18 because the mixed sample's
+// to them is conservative). Binding maxima: E14 346.7ms VM = 693ms phone;
+// E15 653.4ms = 1306ms phone (within 3000ms); E16 3583.3ms = 7166ms
+// phone (busts). Hence the scalar 15 — down from the earlier 16/18
+// because the mixed sample's
 // pathological randquiet positions, not the medians (E16 median 38ms),
-// bust the targets. Heur-only maxima would give (14, 15, 19, 19), but
+// bust the targets. Heur-only maxima would give 19, but
 // real games vs human opponents include non-heur positions, so the mixed
 // rule governs. CAVEAT: these are scalar 5x5 thresholds and do NOT
 // satisfy phone targets on larger boards (7x7 E14 max 2701ms VM = 5.4s
-// phone; 10x10 E14 max 2110ms VM = 4.2s phone — both bust even Master
-// 3000ms). Per-size minimaxLines (boundary already uses per-size maps)
-// is the recommended follow-up; it was NOT added here to keep this
-// integration to the scoped scalar recalibration.
-// boundary (Stage B crossover): 0 at every level and size — at the
+// phone; 10x10 E14 max 2110ms VM = 4.2s phone — both bust the 3000ms
+// target). Per-size minimaxLines follow below (component (d)).
+// boundary (Stage B crossover): 0 on every size — at the
 //   time-derived budgets, gated MCTS never out-decided the heuristic
 //   pick on >= 60% of quiet positions at any empties level (n=6/bucket
 //   on 5x5/7x7, n=3 on 10x10), so phase 2 is calibrated OFF. If budgets
 //   or rollouts change materially, re-run Stage B before enabling it.
-// cp (Stage B side-experiment, n=14 paired): 1.41 everywhere — Cp 0.5
+// cp (Stage B side-experiment, n=14 paired): 1.41 — Cp 0.5
 //   point estimates were better at both budget classes but within
 //   ~1 sigma (noise), so the textbook default stands.
-const LEVELS = {
-    Beginner:     { minimaxLines: 0,  phoneMs: 250,  cp: 1.41, boundary: { 60: 0, 112: 0, 220: 0 }, minimaxLinesBySize: { 7: 10, 10: 10 } },
-    Intermediate: { minimaxLines: 14, phoneMs: 750,  cp: 1.41, boundary: { 60: 0, 112: 0, 220: 0 }, minimaxLinesBySize: { 7: 12, 10: 12 } },
-    Expert:       { minimaxLines: 15, phoneMs: 1500, cp: 1.41, boundary: { 60: 0, 112: 0, 220: 0 }, minimaxLinesBySize: { 7: 12, 10: 12 } },
-    Master:       { minimaxLines: 15, phoneMs: 3000, cp: 1.41, boundary: { 60: 0, 112: 0, 220: 0 }, minimaxLinesBySize: { 7: 12, 10: 12 } },
-};
+// Fixed configuration (levels removed 2026-10-27): phone time target
+// 3000ms, VM budget half that, minimax deadline 80% of VM.
+const VM_BUDGET_MS = 1500;
+const MINIMAX_DEADLINE_MS = Math.round(VM_BUDGET_MS * 0.8); // 1200
+const CP = 1.41;
+const BOUNDARY = 0;
+const MINIMAX_LINES = 15;
+const MINIMAX_LINES_BY_SIZE = { 7: 12, 10: 12 };
 // Per-size minimaxLines (component (d), 2026-10-26): the scalar row above
 // is 5x5-calibrated and BUSTS big-board budgets (7x7 E14 max 2701ms VM,
-// 10x10 E14 max 2110ms VM — both over even Master 1500ms VM). Big-board
+// 10x10 E14 max 2110ms VM — both over the 1500ms VM budget). Big-board
 // lines use the same worst-case rule on NON-decomposed roots (decomposed
 // roots never reach phase 4 — step 1 catches them): harness
 // cascade-minimax-nondec.jsonl, solo-ish VM, n=6 per cell:
 //   7x7:  E10 max 83.6, E12 max 236.0, E14 max 1519.5
 //   10x10: E10 max 89.4, E12 max 355.3, E14 max 1921.5
-// Largest measured E with max <= level VM budget (phoneMs/2):
-// Beginner (125): 10 both sizes (E12: 236/355 bust); Intermediate (375):
-// 12 (E12 10x10 max 355.3 is within 375 but over its 300ms deadline, so
-// the slowest such solves abort to the heuristic — still compliant);
-// Expert (750) / Master (1500): 12 (E14 busts both). 5x5 keeps the (b)
-// scalar row. Non-square boards fall back to the scalar row.
-// Phase-4 deadline (below) is the backstop for contention overshoot, so
-// a line choice here controls waste, not compliance: with the deadline,
-// no phase-4 call can exceed its level's VM budget + fallback cost.
-function minimaxLinesFor(cfg, W, H) {
-    if (W === H && cfg.minimaxLinesBySize && cfg.minimaxLinesBySize[W] !== undefined) {
-        return cfg.minimaxLinesBySize[W];
+// Largest measured E with max <= 1500ms VM budget: 12 (E14 busts).
+// 5x5 keeps the (b) scalar row. Non-square boards fall back to the
+// scalar row. The phase-4 deadline is the backstop for contention
+// overshoot, so a line choice here controls waste, not compliance:
+// with the deadline, no phase-4 call can exceed the VM budget +
+// fallback cost.
+function minimaxLinesFor(W, H) {
+    if (W === H && MINIMAX_LINES_BY_SIZE[W] !== undefined) {
+        return MINIMAX_LINES_BY_SIZE[W];
     }
-    return cfg.minimaxLines;
+    return MINIMAX_LINES;
 }
-// Phase-4 deadline: 80% of the level's VM budget (phoneMs/2), leaving
-// 20% for the fallback move + overhead. Beginner 100, Intermediate 300,
-// Expert 600, Master 1200ms. On SolverAbort the move falls through to
-// phase 3 / phase 1 (lastMinimaxAborted records it); the old 24-hour
-// deadline (effectively no cap) is gone.
+// Phase-4 deadline: 80% of the VM budget, leaving 20% for the
+// fallback move + overhead (1200ms). On SolverAbort the move falls
+// through to phase 3 / phase 1 (lastMinimaxAborted records it); the
+// old 24-hour deadline (effectively no cap) is gone.
 // DEADLINE SOUNDNESS vs the cutoff's micro game: solveRootCutoff checks
 // the deadline between search nodes, but a single componentGameValue call
 // at a cutoff node is NOT deadline-checked. That call is bounded here
@@ -142,10 +138,7 @@ function minimaxLinesFor(cfg, W, H) {
 // measured <= ~25ms warm (game rows) and branch totals (E child calls)
 // <= 94.8ms. So no single cutoff call can stall past the deadline by
 // more than ~0.1s, and phase-4 totals stay within budget + fallback.
-function deadlineMsFor(cfg) {
-    return Math.round(cfg.phoneMs / 2 * 0.8);
-}
-const LEVEL_NAMES = Object.keys(LEVELS);
+
 
 // Measured gated-rollout cost anchors: [totalLines, VM ms per iteration].
 const MS_PER_ITER_ANCHORS = [[60, 0.396], [112, 1.050], [220, 4.136]];
@@ -160,31 +153,10 @@ function msPerIterFor(totalLines) {
     }
     return A[A.length - 1][1];
 }
-// Phase-2 iteration budget: VM budget (phone target / 2) / measured rate.
-function iterationsFor(level, totalLines) {
-    const cfg = LEVELS[level] || LEVELS.Master;
-    return Math.max(1, Math.round((cfg.phoneMs / 2) / msPerIterFor(totalLines)));
-}
-// Boundary anchors: totalLines -> boundary empties. For other board sizes,
-// interpolate the boundary FRACTION (boundary / totalLines) between anchors.
-const BOUNDARY_ANCHORS = [60, 112, 220];
-
-function boundaryFor(levelCfg, totalLines) {
-    const anchors = BOUNDARY_ANCHORS;
-    const frac = (L) => levelCfg.boundary[L] / L;
-    let f;
-    if (totalLines <= anchors[0]) f = frac(anchors[0]);
-    else if (totalLines >= anchors[anchors.length - 1]) f = frac(anchors[anchors.length - 1]);
-    else {
-        for (let i = 0; i < anchors.length - 1; i++) {
-            const a = anchors[i], c = anchors[i + 1];
-            if (totalLines >= a && totalLines <= c) {
-                f = frac(a) + (frac(c) - frac(a)) * (totalLines - a) / (c - a);
-                break;
-            }
-        }
-    }
-    return Math.round(f * totalLines);
+// Phase-2 iteration budget: VM budget / measured rate. (Phase 2 never
+// fires — BOUNDARY is 0 — but the budget is kept for reference.)
+function iterationsFor(totalLines) {
+    return Math.max(1, Math.round(VM_BUDGET_MS / msPerIterFor(totalLines)));
 }
 
 function popcount(b) {
@@ -499,8 +471,8 @@ function rolloutStaged(b, hBits, vBits, turn, epsilon, heuristic) {
 
 // ---------------------------------------------------------------------------
 // MCTS: plain UCB selection with a parameterized exploration constant,
-// iteration budget (no time budget — a level promises the same strength on
-// any device), gated rollouts. Cp = sqrt(2) reproduces classic UCB1:
+// iteration budget (no time budget — fixed strength on any device),
+// gated rollouts. Cp = sqrt(2) reproduces classic UCB1:
 //   val = mean + Cp * sqrt(ln(parent visits) / child visits)
 // ---------------------------------------------------------------------------
 class MNode {
@@ -631,7 +603,6 @@ function controllerMultiMove(heuristic, regions, offered) {
 
 export default class AIEngineLeveled {
     constructor(options = {}) {
-        this.level = LEVEL_NAMES.includes(options.level) ? options.level : 'Master';
         this.epsilon = options.epsilon ?? 0.15;
         this.heuristic = new AIEngineHeuristic();
         this.lastIterations = 0;
@@ -640,15 +611,12 @@ export default class AIEngineLeveled {
         this.lastMinimaxAborted = false; // true when phase 4 timed out and the move fell through
     }
 
-    cfg() { return LEVELS[this.level] || LEVELS.Master; }
-
     async move(h, v, squaresLeft) {
         const W = h.length, H = v.length;
         const b = buildBoard(W, H);
         const { hBits, vBits } = fromMatrices(b, h, v);
         const moves = emptyLines(b, hBits, vBits);
         const E = moves.length;
-        const cfg = this.cfg();
         this.lastIterations = 0;
         this.lastExact = false;
         this.lastMinimaxAborted = false;
@@ -665,14 +633,13 @@ export default class AIEngineLeveled {
         // above the gate the branch is skipped in chooseMove too, so
         // falling through cannot re-enter an uncapped evaluation via
         // step 3. The branch additionally carries a per-child deadline
-        // (set below to this level's 80%-of-VM figure), so even an
+        // (the shared 1200ms default in AIEngineHeuristic), so even an
         // in-gate multiset the structural gate underestimates abandons
         // instead of stalling the move; on a branch timeout
         // (heuristic.evaluatorTimedOut) the cascade falls through to
         // step 2 rather than returning the fallback move as an
         // 'evaluator' decision. Gated-out decomposed positions fall
         // through to step 2 the same way.
-        this.heuristic.evaluatorBudgetMs = deadlineMsFor(cfg);
         const sides = computeSides(b, hBits, vBits);
         if (isDecomposed(sides)) {
             const comps = extractComponents(b, hBits, vBits, sides);
@@ -690,7 +657,7 @@ export default class AIEngineLeveled {
         }
 
         if (E === 1) {
-            this.lastPhase = E <= minimaxLinesFor(cfg, W, H) ? 'minimax' : 'heuristic-quiet';
+            this.lastPhase = E <= minimaxLinesFor(W, H) ? 'minimax' : 'heuristic-quiet';
             return lineToString(b, moves[0]);
         }
 
@@ -700,12 +667,12 @@ export default class AIEngineLeveled {
         // composite 740/740 moves, 720/720 values, 63/63 + 63/63
         // small-board brute force — but with decomposition cutoff on
         // fully-decomposed nodes). The old 24-hour deadline is replaced
-        // by deadlineMsFor (80% of VM budget); see its soundness note
+        // by MINIMAX_DEADLINE_MS (80% of VM budget); see its soundness note
         // re single cutoff calls. Only SolverAbort falls through — any
         // other throw propagates (a real bug, not a timeout).
-        if (E <= minimaxLinesFor(cfg, W, H)) {
+        if (E <= minimaxLinesFor(W, H)) {
             try {
-                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + deadlineMsFor(cfg)).move;
+                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + MINIMAX_DEADLINE_MS).move;
                 this.lastPhase = 'minimax';
                 this.lastExact = true;
                 return lineToString(b, mv);
@@ -739,7 +706,7 @@ export default class AIEngineLeveled {
 
         // Phase 1: quiet and still above the capability boundary -> the
         // heuristic's safe play; MCTS has no detectable signal here.
-        if (E > boundaryFor(cfg, b.L)) {
+        if (E > BOUNDARY) {
             this.lastPhase = 'heuristic-quiet';
             const m = this.heuristic.chooseMove(h, v);
             return m[0] + ',' + m[1] + ',' + m[2];
@@ -747,9 +714,9 @@ export default class AIEngineLeveled {
 
         // Phase 2 (steering window): MCTS with the level's time-derived,
         // size-scaled iteration budget.
-        const iterations = iterationsFor(this.level, b.L);
+        const iterations = iterationsFor(b.L);
         const { move, iterations: ran } = runMCTS(b, hBits, vBits, squaresLeft, {
-            iterations, cp: cfg.cp, epsilon: this.epsilon, heuristic: this.heuristic,
+            iterations, cp: CP, epsilon: this.epsilon, heuristic: this.heuristic,
         });
         this.lastPhase = 'mcts';
         this.lastIterations = ran;
@@ -757,4 +724,4 @@ export default class AIEngineLeveled {
     }
 }
 
-export { LEVELS, LEVEL_NAMES, boundaryFor, iterationsFor, msPerIterFor, buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, runMCTS, countOfferedRegions, offeredRegions, controllerMultiMove, minimaxLinesFor, deadlineMsFor, EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS };
+export { iterationsFor, msPerIterFor, buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, runMCTS, countOfferedRegions, offeredRegions, controllerMultiMove, minimaxLinesFor, EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS };

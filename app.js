@@ -27,9 +27,8 @@ function init() {
         if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k iters';
         return n + ' iters';
     };
-    // AI-Hybrid always plays at Master (no level dropdown); Player.js
-    // defaults the leveled engine to Master, and it is passed explicitly
-    // below so the pinning is visible at the call site.
+    // AI-Hybrid always plays at the engine's fixed strength (no level
+    // selection); the leveled engine takes no strength parameter.
     heightRange.addEventListener('input', (e) => {
         heightValue.textContent = e.target.value;
     });
@@ -43,8 +42,8 @@ function init() {
         if (dotGame) { dotGame.cancelled = true; dotGame.destroy(); }
         const height = parseInt(heightRange.value);
         const width = parseInt(widthRange.value);
-        const player1 = new Player('1','#BF616A','#E5B3B8',player1Type.value,'Master');
-        const player2 = new Player('2','#5E81AC','#88C0D0',player2Type.value,'Master');
+        const player1 = new Player('1','#BF616A','#E5B3B8',player1Type.value);
+        const player2 = new Player('2','#5E81AC','#88C0D0',player2Type.value);
         gameOverBanner.classList.remove('show');
         p1Iters.textContent = '';
         p2Iters.textContent = '';
