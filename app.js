@@ -12,12 +12,6 @@ function init() {
     const widthValue = document.getElementById('widthValue');
     const player1Type = document.getElementById('player1Type');
     const player2Type = document.getElementById('player2Type');
-    const p1ThinkGroup = document.getElementById('p1ThinkGroup');
-    const p2ThinkGroup = document.getElementById('p2ThinkGroup');
-    const p1ThinkRange = document.getElementById('p1ThinkRange');
-    const p2ThinkRange = document.getElementById('p2ThinkRange');
-    const p1ThinkValue = document.getElementById('p1ThinkValue');
-    const p2ThinkValue = document.getElementById('p2ThinkValue');
     const p1Iters = document.getElementById('p1Iters');
     const p2Iters = document.getElementById('p2Iters');
     const newGameButton = document.getElementById('newGameButton');
@@ -28,37 +22,14 @@ function init() {
                                     document.getElementById('p2Card'),
                                     document.getElementById('player1Score'),
                                     document.getElementById('player2Score'));
-    const fmtThink = (ms) => (ms / 1000).toFixed(1) + 's';
     const fmtIters = (n) => {
         if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M iters';
         if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k iters';
         return n + ' iters';
     };
-    // Each player's Think slider applies live to that player's engine.
-    function makeThinkUpdater(range, value, playerIndex) {
-        return () => {
-            const ms = parseInt(range.value);
-            value.textContent = fmtThink(ms);
-            if (dotGame) {
-                const p = dotGame.players[playerIndex];
-                if (p.aiEngine) p.aiEngine.thinkMs = ms;
-            }
-        };
-    }
-    const updateP1Think = makeThinkUpdater(p1ThinkRange, p1ThinkValue, 0);
-    const updateP2Think = makeThinkUpdater(p2ThinkRange, p2ThinkValue, 1);
-    p1ThinkRange.addEventListener('input', updateP1Think);
-    p1ThinkRange.addEventListener('change', updateP1Think);
-    p2ThinkRange.addEventListener('input', updateP2Think);
-    p2ThinkRange.addEventListener('change', updateP2Think);
-    // Show a player's Think slider only when that player is AI-Hybrid.
-    function updateThinkVisibility() {
-        p1ThinkGroup.classList.toggle('hidden', player1Type.value !== 'ai-hybrid');
-        p2ThinkGroup.classList.toggle('hidden', player2Type.value !== 'ai-hybrid');
-    }
-    player1Type.addEventListener('change', updateThinkVisibility);
-    player2Type.addEventListener('change', updateThinkVisibility);
-    updateThinkVisibility();
+    // AI-Hybrid always plays at Master (no level dropdown); Player.js
+    // defaults the leveled engine to Master, and it is passed explicitly
+    // below so the pinning is visible at the call site.
     heightRange.addEventListener('input', (e) => {
         heightValue.textContent = e.target.value;
     });
@@ -72,10 +43,8 @@ function init() {
         if (dotGame) { dotGame.cancelled = true; dotGame.destroy(); }
         const height = parseInt(heightRange.value);
         const width = parseInt(widthRange.value);
-        const p1ThinkMs = parseInt(p1ThinkRange.value);
-        const p2ThinkMs = parseInt(p2ThinkRange.value);
-        const player1 = new Player('1','#BF616A','#E5B3B8',player1Type.value,p1ThinkMs);
-        const player2 = new Player('2','#5E81AC','#88C0D0',player2Type.value,p2ThinkMs);
+        const player1 = new Player('1','#BF616A','#E5B3B8',player1Type.value,'Master');
+        const player2 = new Player('2','#5E81AC','#88C0D0',player2Type.value,'Master');
         gameOverBanner.classList.remove('show');
         p1Iters.textContent = '';
         p2Iters.textContent = '';
@@ -90,9 +59,6 @@ function init() {
         // marks P1 active, so re-sync the indicator to the actual turn.
         scoreboard.switchActivePlayer(dotGame.turn);
         dotGame.render();
-        // setupTestCase() may have rewritten the player-type selects
-        // programmatically (no 'change' event), so re-sync the Think sliders.
-        updateThinkVisibility();
     }
     newGameButton.addEventListener('click', newGame);
     // Dismiss the result banner: OK button or a click on the backdrop

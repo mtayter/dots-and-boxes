@@ -25,24 +25,30 @@ import Player from "./Player.js";
            Note: the chain is only 4 long, so the only splits are 1-3 or 2-2;
            a longer chain would be a fairer test of interior-vs-ends. The
            heuristic's random-end choice picks wrong 50% of the time here.
-        10) Heuristic FAIL / solver PASS: first case where the single-offer
-           controller is provably wrong (not the multi-offer greedy bail).
-           5x5, one offer: a 2-chain (0,0)-(1,0) plus an unopened 4-chain,
-           8-loop, and 4-loop (all-even remaining inventory). The heuristic
-           double-crosses the 2-chain (v,1,0, closing nothing) for a
-           remaining differential of -2; the optimal move takes (0,0) with
-           h,0,1 (cascading to (1,0)) for +2 -- a 4-box gap. Verified
-           against the exact solver (unique argmax h,0,1); the heuristic's
-           move is identical on all seeds. The double-cross donates a
+        10) Heuristic PASS (since the 2026-10-26 cascade) / solver PASS:
+           first case where the single-offer controller was provably
+           wrong (not the multi-offer greedy bail). 5x5, one offer:
+           a 2-chain (0,0)-(1,0) plus an unopened 4-chain, 8-loop,
+           and 4-loop (all-even remaining inventory). Before the
+           cascade, the heuristic double-crossed the 2-chain (v,1,0,
+           closing nothing) for a remaining differential of -2; the
+           optimal move takes (0,0) with h,0,1 (cascading to (1,0))
+           for +2 -- a 4-box gap. Since the cascade's evaluator
+           branch (this position is decomposed), the heuristic plays
+           the optimal h,0,1 on all seeds. Verified against the exact
+           solver (unique argmax h,0,1). The double-cross donates a
            cascade chain: taking its end box banks 2, not 1.
-        11) Heuristic FAIL / solver PASS: same position as case 10 except
-           v,0,4 is removed and v,0,5 + h,3,0 are added, turning the
-           unopened 4-chain into a 4-loop (same side-count grid, E=18).
-           Remaining inventory is now all loops (8-loop + two 4-loops).
-           Same result: heuristic double-crosses the 2-chain (v,1,0) for
-           -2; optimal h,0,1 takes both chain boxes for +2 -- gap 4.
-           Verified against the exact decomposed evaluator (unique
-           argmax h,0,1); heuristic move identical on all seeds.
+        11) Heuristic PASS (since the 2026-10-26 cascade) / solver PASS:
+           same position as case 10 except v,0,4 is removed and
+           v,0,5 + h,3,0 are added, turning the unopened 4-chain
+           into a 4-loop (same side-count grid, E=18). Remaining
+           inventory is now all loops (8-loop + two 4-loops). Same
+           story as case 10: before the cascade the heuristic
+           double-crossed the 2-chain (v,1,0) for -2; optimal h,0,1
+           takes both chain boxes for +2 -- gap 4. Since the
+           cascade's evaluator branch, the heuristic plays the
+           optimal h,0,1 on all seeds. Verified against the exact
+           decomposed evaluator (unique argmax h,0,1).
         */
 
 
@@ -473,8 +479,11 @@ export function setupTestCase(game, testCase, testAI) {
             //   X 2 2 X X
             // Single offer: the 2-chain (0,0)-(1,0); unopened 4-chain
             // (top right), 8-loop (center), 4-loop (bottom right).
-            // Heuristic controllerMove double-crosses the 2-chain with
-            // v,1,0 (closing nothing) for a remaining differential of -2.
+            // Before the 2026-10-26 cascade, heuristic controllerMove
+            // double-crossed the 2-chain with v,1,0 (closing nothing)
+            // for a remaining differential of -2. Since the cascade's
+            // evaluator branch (this position is decomposed), the
+            // heuristic plays the optimal move instead.
             // Optimal (exact solver, unique argmax): h,0,1 takes (0,0) and
             // cascades to (1,0) for +2. Gap: 4 boxes.
             // ORDER MATTERS below: the 4 shared edges between taken boxes
@@ -554,11 +563,13 @@ export function setupTestCase(game, testCase, testAI) {
             // but the unplayed shared edge v,0,4 now closes the cycle, so
             // the unopened 4-chain (top right) becomes a 4-loop. Remaining
             // inventory is all loops: 8-loop (center) + two 4-loops.
-            // Single offer: the 2-chain (0,0)-(1,0). Heuristic
-            // controllerMove double-crosses it with v,1,0 (closing
-            // nothing) for -2; optimal (exact decomposed evaluator,
-            // unique argmax): h,0,1 takes (0,0) and cascades to (1,0)
-            // for +2. Gap: 4 boxes, as in case 10.
+            // Single offer: the 2-chain (0,0)-(1,0). Before the
+            // 2026-10-26 cascade, heuristic controllerMove
+            // double-crossed it with v,1,0 (closing nothing) for -2.
+            // Since the cascade's evaluator branch, the heuristic
+            // plays the optimal move instead. Optimal (exact
+            // decomposed evaluator, unique argmax): h,0,1 takes (0,0)
+            // and cascades to (1,0) for +2. Gap: 4 boxes, as in case 10.
             // ORDER MATTERS below: 42 moves, one more than case 10, so
             // the parity flips -- the turn lands on player 1 (the AI)
             // only if exactly one preset move closes two boxes. The

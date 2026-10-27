@@ -195,7 +195,8 @@
   margin-bottom: 12px;
 }
 
-/* One vertical stack per player: type dropdown with its think slider below */
+/* One vertical stack per player: the player-type dropdown. (The level
+   dropdowns were removed 2026-10-26; AI-Hybrid always plays Master.) */
 .player-col {
   flex: 1;
   min-width: 0;
@@ -233,39 +234,7 @@
   color: var(--text-primary);
 }
 
-/* Compact think slider row living under its player's dropdown */
-/* When hidden, keep the space reserved (visibility, not display) so the
-   row appearing/disappearing doesn't shift the layout up and down. */
-.think-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 
-.think-inline.hidden {
-  display: flex !important;
-  visibility: hidden;
-}
-
-.think-inline label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  user-select: none;
-}
-
-.think-inline input[type="range"] {
-  flex: 1;
-  min-width: 0;
-}
-
-.think-inline output {
-  font-size: 0.85rem;
-  font-weight: 600;
-  min-width: 34px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  user-select: none;
-}
 
 /* Dropdown styling matching a dark/modern theme fallback */
 .toggle-select {
