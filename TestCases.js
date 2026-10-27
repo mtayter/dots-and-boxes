@@ -64,8 +64,7 @@ import Player from "./Player.js";
  * @param {object} game - the DotGame under construction (its board arrays,
  *                        players, move() and checkAImove() are all used)
  * @param {string|number} testCase - selected case; "0" means not testing
- * @param {string} testAI - player under test: 'ai-hybrid' (the unified
- *                         engine; 'ai-heuristic' is a retired alias for it)
+ * @param {string} testAI - player under test: 'ai' (the unified engine)
  *                         or 'human' (you play the test seat yourself)
  */
 export function setupTestCase(game, testCase, testAI) {

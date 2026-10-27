@@ -1,6 +1,6 @@
-// AIEngineLeveled.js
+// AIEngine.js
 //
-// Leveled 4-phase Dots and Boxes AI, fixed strength (the engine always
+// AIEngine: fixed-strength 4-phase Dots and Boxes AI (the engine always
 // uses the single configuration below). Design (agreed with Mike,
 // 2026-10-23): commit-or-skip minimax,
 // crisp either/or phases, no blending. Each move is decided by exactly one
@@ -61,8 +61,8 @@ import { solveRootCutoff, SolverAbort as CutoffAbort } from "./SolverCutoff.js";
 import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js";
 // NOTE (2026-10-26, component (b) integration): phase 4 now solves via
 // SolverCutoff's decomposition-cutoff solver instead of the plain expansion
-// solver below. Import chain Leveled -> SolverCutoff -> Hybrid/ControlValue
-// has no cycle (nothing imports AIEngineLeveled). solveRoot stays exported
+// solver below. Import chain AIEngine -> SolverCutoff -> Hybrid/ControlValue
+// has no cycle (nothing imports AIEngine). solveRoot stays exported
 // (fixed) for harness/reference use.
 
 // ---- FIXED CONFIGURATION: filled from Stage A/B calibration (see header) ----
@@ -552,7 +552,7 @@ function countOfferedRegions(heuristic, h, v) {
     return offeredRegions(heuristic, h, v).offered.length;
 }
 
-export default class AIEngineLeveled {
+export default class AIEngine {
     constructor(options = {}) {
         this.epsilon = options.epsilon ?? 0.15;
         this.heuristic = new AIEngineHeuristic();

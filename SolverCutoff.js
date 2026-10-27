@@ -2,7 +2,7 @@
 //
 // Exact Dots and Boxes solver with a DECOMPOSITION CUTOFF.
 //
-// Same algorithm as AIEngineLeveled's corrected solver (negamax +
+// Same algorithm as AIEngine's corrected solver (negamax +
 // alpha-beta + transposition table, fresh TT per root move, only
 // non-pruned values cached — the PR #37 discipline), with one change:
 // at any search node whose position is FULLY DECOMPOSED (every
@@ -184,9 +184,9 @@ function solveRecCutoff(b, hBits, vBits, turn, alpha, beta, tt, deadline, counte
     return best;
 }
 
-// Same root discipline as AIEngineLeveled.solveRoot: fresh TT per root
+// Same root discipline as AIEngine.solveRoot: fresh TT per root
 // move, full window, takes ordered before rest. Returns the best move
-// AND its value (the leveled solveRoot returns only the move).
+// AND its value (the engine's solveRoot returns only the move).
 function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, opts = {}) {
     const o = { cutoffMinE: 0, cutoffMaxComps: Infinity, ...opts };
     const counter = { n: 0 };
