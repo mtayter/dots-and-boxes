@@ -549,7 +549,7 @@ function runMCTSInternal(b, hBits, vBits, squaresLeft, opts = {}, useCutoff = tr
     // end. The full cutoff (default) truncates rollouts too. The flag
     // exists because rollout truncation pays a cold ControlValue call
     // per rollout (heavy-tailed: median 0.01ms, mean ~4ms, max 522ms in
-    // harness profile2), which starves the tree at level time budgets;
+    // harness profile2), which starves the tree at small time budgets;
     // tree-only is the measured alternative, not a second implementation.
     const rolloutCutoff = opts.rolloutCutoff ?? true;
     const deadline = opts.deadline ?? (opts.thinkMs !== undefined ? Date.now() + opts.thinkMs : Infinity);

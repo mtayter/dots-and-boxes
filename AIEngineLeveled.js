@@ -1,8 +1,8 @@
 // AIEngineLeveled.js
 //
-// Leveled 4-phase Dots and Boxes AI, fixed strength (difficulty levels
-// removed 2026-10-27; the engine always uses the single configuration
-// below). Design (agreed with Mike, 2026-10-23): commit-or-skip minimax,
+// Leveled 4-phase Dots and Boxes AI, fixed strength (the engine always
+// uses the single configuration below). Design (agreed with Mike,
+// 2026-10-23): commit-or-skip minimax,
 // crisp either/or phases, no blending. Each move is decided by exactly one
 // stage, checked in this order (cascade, component (d) 2026-10-26):
 //
@@ -58,7 +58,7 @@
 // Calibration provenance: Stage A (solver cost vs empties -> minimaxLines,
 // phone time = 2x VM time, worst-case rule) and Stage B (quiet-position
 // crossover -> boundary; Cp side-experiment). Logs:
-// ~/workspace/goals/mcts-engine-improvements/hidden_files/ (levels-progress.log)
+// ~/workspace/goals/mcts-engine-improvements/hidden_files/
 
 import AIEngineHeuristic, { EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS } from "./AIEngineHeuristic.js";
 import { solveRootCutoff, SolverAbort as CutoffAbort } from "./SolverCutoff.js";
@@ -97,7 +97,7 @@ import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js
 // cp (Stage B side-experiment, n=14 paired): 1.41 — Cp 0.5
 //   point estimates were better at both budget classes but within
 //   ~1 sigma (noise), so the textbook default stands.
-// Fixed configuration (levels removed 2026-10-27): phone time target
+// Fixed configuration: phone time target
 // 3000ms, VM budget half that, minimax deadline 80% of VM.
 const VM_BUDGET_MS = 1500;
 const MINIMAX_DEADLINE_MS = Math.round(VM_BUDGET_MS * 0.8); // 1200
@@ -712,7 +712,7 @@ export default class AIEngineLeveled {
             return m[0] + ',' + m[1] + ',' + m[2];
         }
 
-        // Phase 2 (steering window): MCTS with the level's time-derived,
+        // Phase 2 (steering window): MCTS with the fixed time-derived,
         // size-scaled iteration budget.
         const iterations = iterationsFor(b.L);
         const { move, iterations: ran } = runMCTS(b, hBits, vBits, squaresLeft, {

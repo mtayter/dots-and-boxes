@@ -195,9 +195,7 @@
   margin-bottom: 12px;
 }
 
-/* One vertical stack per player: the player-type dropdown. (The level
-   dropdowns were removed 2026-10-26; AI-Hybrid always plays at fixed
-   strength.) */
+/* One vertical stack per player: the player-type dropdown. */
 .player-col {
   flex: 1;
   min-width: 0;
