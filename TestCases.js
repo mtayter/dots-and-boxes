@@ -49,6 +49,27 @@ import Player from "./Player.js";
            cascade's evaluator branch, the heuristic plays the
            optimal h,0,1 on all seeds. Verified against the exact
            decomposed evaluator (unique argmax h,0,1).
+        12) Engine PASS / standalone-heuristic FAIL: first case where
+           declining an available take is strictly optimal on a
+           NON-decomposed board. 3x3, E=14, no claimed boxes. Side
+           counts:
+             1 1 0
+             2 2 1
+             3 2 1
+           Box (2,0) is 3-sided, so the take v,2,1 is available, but
+           taking it is worth -1 while declining with v,2,2 (which
+           gives (2,1) its 3rd side) is worth +1 -- a 2-box gap,
+           verified against the exact solver. The standalone
+           heuristic always takes when a take is available, so it
+           plays v,2,1 and is wrong here; the unified engine
+           declines via its exact/minimax branch (E=14 <= 15 gate)
+           and plays v,2,2. Found by exact-solver search over random
+           non-decomposed take-available positions (3 counterexamples
+           found in 97 checked, all with the same -1 vs +1 shape).
+           ORDER: no box is claimed in the final position, so no
+           preset move can close a box -- all 10 moves are toggles,
+           the turn lands on player 1 (the AI), and move() triggers
+           checkAImove. Any order works.
         */
 
 
@@ -58,7 +79,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"11") must stay in sync with those <option> values.
+ * values here ("0"-"12") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -639,5 +660,42 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,2,5");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("v,4,4");
+        }
+
+        if(testCase == 12) {
+            // Decline-a-take counterexample (non-decomposed). 3x3 board,
+            // AI (player 1) to move. No box is claimed, so no preset
+            // move can close a box: all 10 moves are toggles, the turn
+            // lands on player 1, and move() triggers checkAImove.
+            // Optimal (exact solver): decline the take v,2,1 (-1) and
+            // play v,2,2 (+1) instead. The standalone heuristic always
+            // takes when a take is available, so it plays v,2,1 here.
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,2");
+            game.move("h,0,3");
+            game.move("h,1,0");
+            game.move("h,1,2");
+            game.move("h,1,3");
+            game.move("h,2,3");
+            game.move("v,0,0");
+            game.move("v,1,1");
+            game.move("v,1,3");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,2,0");
         }
 }
