@@ -1,7 +1,20 @@
 import { setupTestCase } from "./TestCases.js";
 
+// Console-log label for how the engine produced a move, from the phase
+// it recorded on its last move() call. '' when nothing applies.
+function aiSuffixFor(engine) {
+    switch (engine.lastPhase) {
+        case 'evaluator': return 'exact';
+        case 'minimax': return 'minimax';
+        case 'heuristic-offer':
+        case 'heuristic-quiet': return 'heuristic';
+        case 'mcts': return 'MCTS - ' + (engine.lastIterations || 0).toLocaleString('en-US') + ' iterations';
+        default: return engine.lastExact ? 'exact' : '';
+    }
+}
+
 export default class DotGame {
-    constructor(height,width,player1,player2,ctx,scoreboard,options = {}) {
+    constructor(height,width,player1,player2,ctx,scoreboard) {
         this.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
         this.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
         this.squares = Array.from({ length: height }, () => Array(width).fill(0));
@@ -9,7 +22,6 @@ export default class DotGame {
         this.players = [player1,player2];
         this.ctx = ctx;
         this.scoreboard = scoreboard;
-        this.onAIMove = options.onAIMove || null;  // (playerNum, iterations) => void
         this.turn = 1;
         this.sq = undefined;
         this.dt = undefined;
@@ -121,7 +133,11 @@ export default class DotGame {
         }
         return '';
     }
-    move(m) {
+    move(m, aiSuffix = '') {
+        // Every move goes to the console: "1-Human: h,0,0" for a person,
+        // "2-AI: v,1,0 (minimax)" for the engine, with how it decided.
+        const mover = this.players[this.turn-1];
+        console.log(this.turn + '-' + (mover.ai ? 'AI' : 'Human') + ': ' + m + (aiSuffix ? ' (' + aiSuffix + ')' : ''));
         let o,i,j,p,x,y,closed = false;
         [o,i,j] = m.split(',');
         i = parseInt(i);
@@ -288,12 +304,10 @@ export default class DotGame {
             // the main thread while thinking.
             await this.waitForPaint();
             if (this.cancelled) return;
-            const playerNum = this.turn;
             const engine = this.players[this.turn-1].aiEngine;
             const m = await engine.move(this.hLines,this.vLines,this.squaresLeft);
             if (this.cancelled) return;
-            if (this.onAIMove) this.onAIMove(playerNum, engine.lastIterations || 0, !!engine.lastExact);
-            this.move(m);
+            this.move(m, aiSuffixFor(engine));
         }
     }
 }
