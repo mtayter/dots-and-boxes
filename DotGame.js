@@ -6,8 +6,8 @@ function aiSuffixFor(engine) {
     switch (engine.lastPhase) {
         case 'evaluator': return 'exact';
         case 'minimax': return 'minimax';
-        case 'heuristic-offer':
-        case 'heuristic-quiet': return 'heuristic';
+        case 'heuristic-offer': return 'heuristic-offer';
+        case 'heuristic-quiet': return 'heuristic-quiet';
         case 'mcts': return 'MCTS - ' + (engine.lastIterations || 0).toLocaleString('en-US') + ' iterations';
         default: return engine.lastExact ? 'exact' : '';
     }
