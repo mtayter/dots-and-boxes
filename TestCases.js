@@ -477,14 +477,20 @@ export function setupTestCase(game, testCase, testAI) {
         }
 
         if(testCase == 9) {
-            // Opener chain-end choice on a 4-chain. 4x4 board, opener mode
+            // Opener chain choice on a 4-chain. 4x4 board, opener mode
             // (no 3-sided boxes). A 4-chain (2,2)-(3,2)-(3,3)-(2,3) plus a
             // blob. 22 preset moves, no takes, so player 1 (the AI) is to move.
-            // Solver (verified, fast on this small board): only h,2,2 is
-            // optimal (-4); the other end v,2,4 and all interior moves
-            // (h,2,3, v,3,3, h,3,3) are -6. Caveat: the chain is only 4 long,
-            // so the only splits are 1-3 or 2-2 -- a longer chain would be a
-            // fairer test of interior-vs-ends.
+            // Solver (re-verified 2026-10-29 by solving every legal move):
+            // the five chain moves h,2,2, h,2,3, h,3,3, v,2,4, v,3,3 are ALL
+            // optimal (-4) -- the ends and the interior moves tie, because a
+            // 4-chain only splits 1-3 or 2-2 and both come out the same. The
+            // other 13 legal moves are unsafe blob moves: nine are -8 and
+            // four are -12. So this case really tests "play in the chain vs
+            // blunder in the blob", and the heuristic cannot fail it: its
+            // safe set is exactly the five chain moves. For a chain where
+            // interior-vs-ends actually discriminates, see case 15.
+            // (An earlier version of this comment claimed only h,2,2 was
+            // optimal and the rest were -6; that was never true.)
             height = 4;
             width = 4;
             document.getElementById('heightRange').value = height;
