@@ -168,17 +168,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .score-side .player-iters {
-    color: rgba(255, 255, 255, 0.85);
-  }
-
-  .player-iters {
-    font-size: 0.7rem;
-    color: var(--text-secondary);
-    min-height: 1em;
-    font-variant-numeric: tabular-nums;
-  }
-
   .hidden {
     display: none !important;
   }
