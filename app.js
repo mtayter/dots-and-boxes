@@ -29,6 +29,8 @@ function init() {
         widthValue.textContent = e.target.value;
     });
     function newGame() {
+        // Separator in the console move log between games.
+        console.log('New Game');
         // Stop the previous game's AI loop if it's still thinking: otherwise
         // the abandoned game keeps move()ing and rendering its old board
         // onto this same canvas.
