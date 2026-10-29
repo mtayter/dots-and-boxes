@@ -272,6 +272,28 @@ export default class AIEngineHeuristic {
         }
         return true;
     }
+    // True when some untaken edge touches only boxes with <2 sides --
+    // a move that creates no 3-sided box. (The same safety notion as
+    // openerMove's first pass; an edge on the board boundary touches
+    // one box, which decides alone.)
+    existsSafeMove() {
+        for (let j = 0; j < this.x; j++)
+            for (let i = 0; i <= this.y; i++) {
+                if (this.h[j][i] != 0) continue;
+                const [a, b] = this.edgeBoxes(['h', j, i]);
+                if ((!a || this.squares[a[0]][a[1]] < 2) &&
+                    (!b || this.squares[b[0]][b[1]] < 2)) return true;
+            }
+        for (let i = 0; i < this.y; i++)
+            for (let j = 0; j <= this.x; j++) {
+                if (this.v[i][j] != 0) continue;
+                const [a, b] = this.edgeBoxes(['v', i, j]);
+                if ((!a || this.squares[a[0]][a[1]] < 2) &&
+                    (!b || this.squares[b[0]][b[1]] < 2)) return true;
+            }
+        return false;
+    }
+
     // ---- controller ----
     controllerMove(threes) {
         const regions = this.buildRegions();
@@ -287,22 +309,36 @@ export default class AIEngineHeuristic {
         }
         if (otherLong == 0) return null;
 
+        // Both double-cross moves (chainDoubleCross, doubleLoony) rest
+        // on one premise: after the opponent takes the ripened boxes,
+        // their extra move must open another component, because every
+        // remaining move ripens something. A safe move anywhere breaks
+        // that premise -- the opponent pockets the boxes, plays safe,
+        // and keeps the initiative -- so when one exists, decline the
+        // giveaway (return null below) and let greedyTake play instead.
+        // The offered region's own edges never count as safe: its boxes
+        // all have >= 2 sides. (Bug found by Mike 2026-10-29: with safe
+        // moves available, chainDoubleCross gave a 2-chain away for -5
+        // instead of taking the offered box for +5.)
+        const canGive = !this.existsSafeMove();
+
         const n = R.length;
         const loop = this.isLoop(R);
         const openings = R.filter(([i,j]) => this.squares[i][j] == 3);
 
         if (loop) {
             if (n > 4) return this.takeOne(R);
-            return this.doubleLoony(R, rset);
+            return canGive ? this.doubleLoony(R, rset) : null;
         }
         // chain
         if (openings.length <= 1) {
             if (n > 2) return this.untakenEdges(openings[0][0], openings[0][1])[0];
-            if (n == 2) return this.chainDoubleCross(R, rset);
+            if (n == 2) return canGive ? this.chainDoubleCross(R, rset) : null;
             return null; // single box: take it
         }
         // 2+ openings
         if (n > 4) return this.takeOne(R);
+        if (!canGive) return null;
         return this.doubleLoony(R, rset) || this.chainDoubleCross(R, rset);
     }
     // Take one 3-sided box from R, preferring takes that close a single box.
