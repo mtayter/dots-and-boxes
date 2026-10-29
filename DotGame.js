@@ -4,12 +4,12 @@ import { setupTestCase } from "./TestCases.js";
 // it recorded on its last move() call. '' when nothing applies.
 function aiSuffixFor(engine) {
     switch (engine.lastPhase) {
-        case 'evaluator': return 'exact';
+        case 'evaluator': return 'evaluator';
         case 'minimax': return 'minimax';
         case 'heuristic-offer': return 'heuristic-offer';
         case 'heuristic-quiet': return 'heuristic-quiet';
         case 'mcts': return 'MCTS - ' + (engine.lastIterations || 0).toLocaleString('en-US') + ' iterations';
-        default: return engine.lastExact ? 'exact' : '';
+        default: return engine.lastExact ? 'evaluator' : '';
     }
 }
 
@@ -303,10 +303,14 @@ export default class DotGame {
             // Let the browser paint the previous move before the AI blocks
             // the main thread while thinking.
             await this.waitForPaint();
-            if (this.cancelled) return;
+            // Game over while waiting to think (reachable when two AI
+            // chains share a board): never ask the engine to move on a
+            // full board — it has no legal move there and crashes in the
+            // heuristic opener.
+            if (this.cancelled || this.squaresLeft === 0) return;
             const engine = this.players[this.turn-1].aiEngine;
             const m = await engine.move(this.hLines,this.vLines,this.squaresLeft);
-            if (this.cancelled) return;
+            if (this.cancelled || this.squaresLeft === 0) return;
             this.move(m, aiSuffixFor(engine));
         }
     }
