@@ -91,6 +91,28 @@ import Player from "./Player.js";
            preset move can close a box -- all 4 moves are toggles,
            the turn lands on player 1 (the AI), and move() triggers
            checkAImove. Any order works.
+        14) Engine FAIL (known blind spot) / solver PASS: the E=20
+           lottery position (benchmark seed 1005). 3x3, E=20, no
+           claimed boxes. Side counts:
+             1 0 0
+             1 2 1
+             0 1 0
+           No take is available (no 3-sided box), so the heuristic
+           is in opener mode and picks uniformly among 18 safe
+           moves, only 3 of which are optimal: h,0,2, v,0,1, v,1,3
+           (tied, -3); the other 17 moves are -5 -- a 2-box gap,
+           verified against the exact solver. The heuristic hits
+           an optimal only 5/50 seeds; the unified engine falls
+           through to it here (position is non-decomposed, so no
+           evaluator branch; E=20 > 15 minimax gate), so it
+           currently plays a -5 move. This is one of the five
+           stubborn lottery positions the time curve found
+           unfixable by more time (cutoff+restricted MCTS 0/3 at
+           5, 15, and 30 s).
+           ORDER: no box is claimed in the final position, so no
+           preset move can close a box -- all 4 moves are toggles,
+           the turn lands on player 1 (the AI), and move() triggers
+           checkAImove. Any order works.
         */
 
 
@@ -750,5 +772,40 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,0,3");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("v,1,1");
+        }
+        if(testCase == 14) {
+            // Lottery pick (benchmark seed 1005). 3x3 board,
+            // AI (player 1) to move. No box is claimed, so no preset
+            // move can close a box: all 4 moves are toggles, the turn
+            // lands on player 1, and move() triggers checkAImove.
+            // Optimal (exact solver): h,0,2, v,0,1, v,1,3 (tied, -3)
+            // among 18 safe moves; all other 17 moves are -5.
+            // The heuristic, in opener mode, picks uniformly among
+            // safe moves and hits an optimal only 5/50 seeds; the
+            // unified engine falls through to it here
+            // (non-decomposed, E=20 > 15 minimax gate) and plays
+            // a -5 move. Even cutoff+restricted MCTS never fixed
+            // this position (0/3 at 5, 15, and 30 s).
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,0");
+            game.move("h,1,3");
+            game.move("v,1,1");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,1,2");
         }
 }
