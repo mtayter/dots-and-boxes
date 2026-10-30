@@ -19,12 +19,17 @@ import Player from "./Player.js";
            offered 6-loop, then offers the remaining 4 (instead of taking them),
            keeping control; opponent takes 4 and must open the 6-chain, which the
            AI sweeps. Taking all 6 only ties 6-6; the handout wins 8-4.
-        9) Opener chain-end choice on a 4-chain: 4x4 board, opener mode, a
-           4-chain (2,2)-(3,2)-(3,3)-(2,3) plus a blob. Solver: only h,2,2
-           is optimal (-4); the other end v,2,4 and all interior moves are -6.
-           Note: the chain is only 4 long, so the only splits are 1-3 or 2-2;
-           a longer chain would be a fairer test of interior-vs-ends. The
-           heuristic's random-end choice picks wrong 50% of the time here.
+        9) PASS: opener chain choice on a 4-chain: 4x4 board, opener
+           mode, a 4-chain (2,2)-(3,2)-(3,3)-(2,3) plus a blob. Solver
+           (all 18 legal moves solved, 2026-10-29): the five chain moves
+           h,2,2, h,2,3, h,3,3, v,2,4, v,3,3 are ALL optimal (-4); the
+           13 blob moves are -8 (nine) and -12 (four). The case really
+           tests "play in the chain vs blunder in the blob", and the
+           heuristic cannot fail it: its safe set is exactly the five
+           chain moves. A longer-chain version where ends-vs-interior
+           discriminates was searched for (~80k solver-verified
+           positions) and appears not to exist in the all-2-sided
+           family; Mike dropped the idea 2026-10-29.
         10) Heuristic PASS (since the 2026-10-26 cascade) / solver PASS:
            first case where the single-offer controller was provably
            wrong (not the multi-offer greedy bail). 5x5, one offer:
@@ -113,6 +118,42 @@ import Player from "./Player.js";
            preset move can close a box -- all 4 moves are toggles,
            the turn lands on player 1 (the AI), and move() triggers
            checkAImove. Any order works.
+        15) Engine PASS (since the 2026-10-29 double-cross guard) /
+           heuristic PASS: the first case decided by the controller
+           (heuristic-offer). From Mike's live 4x4 game of 2026-10-29:
+           the old AI played v,1,4 -- a chainDoubleCross of the
+           2-region in the right column -- giving both boxes away for
+           -5 instead of taking the offered box with h,3,1 (+5,
+           unique optimal, exact solver). The double-cross premise
+           (the opponent must open another component) was false: safe
+           moves existed elsewhere. The guard (PR #60) declines the
+           giveaway whenever a safe move exists, and the heuristic
+           now takes. The 19 preset moves replay the game (3 close
+           boxes along the way); 16 turn-passes land the turn on
+           player 1. E=21, squaresLeft 13, not decomposed.
+        16) Engine FAIL (known blind spot) / heuristic FAIL /
+           solver PASS: forego-a-take at heuristic scale -- case
+           12's decision with minimax unable to reach it. 3x3, E=16
+           (> 15 gate), non-decomposed, no claimed boxes. Side
+           counts:
+             2 2 1
+             3 1 0
+             2 1 0
+           Box (1,0) is 3-sided, so the take h,0,2 is available, but
+           taking is worth -3 while declining with v,2,1 -- which
+           gives (2,0) its 3rd side, so the two boxes of column 0
+           come to share their last edge -- is worth +3, a 6-box
+           gap; every other move is -7. All verified against the
+           exact solver; found by solver-verified search over random
+           one-take positions. The heuristic takes on 12/12 seeds:
+           its controller bails (no other region of length >= 3 to
+           protect) and greedyTake completes the box. The unified
+           engine falls through to the heuristic here and plays
+           the take too.
+           ORDER: no box is claimed in the final position, so no
+           preset move can close a box -- all 8 moves are toggles,
+           the turn lands on player 1 (the AI), and move() triggers
+           checkAImove. Any order works.
         */
 
 
@@ -122,7 +163,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"13") must stay in sync with those <option> values.
+ * values here ("0"-"16") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -487,8 +528,10 @@ export function setupTestCase(game, testCase, testAI) {
             // other 13 legal moves are unsafe blob moves: nine are -8 and
             // four are -12. So this case really tests "play in the chain vs
             // blunder in the blob", and the heuristic cannot fail it: its
-            // safe set is exactly the five chain moves. For a chain where
-            // interior-vs-ends actually discriminates, see case 15.
+            // safe set is exactly the five chain moves. (A longer-chain
+            // version where ends-vs-interior discriminates was searched
+            // for over ~80k solver-verified positions and appears not to
+            // exist in the all-2-sided family; dropped 2026-10-29.)
             // (An earlier version of this comment claimed only h,2,2 was
             // optimal and the rest were -6; that was never true.)
             height = 4;
@@ -813,5 +856,107 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,1,1");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("v,1,2");
+        }
+
+        if(testCase == 15) {
+            // Double-cross guard (from Mike's live game, 2026-10-29).
+            // 4x4 board, AI (player 1) to move, E=21, squaresLeft 13.
+            // The 19 preset moves replay the actual game in order;
+            // three of them close boxes (h,1,1, h,1,3, h,2,3), so the
+            // 16 turn-passes land the turn on player 1, and move()
+            // triggers checkAImove.
+            // The only 3-sided box is the top-right one, missing only
+            // h,3,1; taking it is +5 (exact solver, unique optimal)
+            // and ripens the box below it. The pre-guard AI played
+            // v,1,4 here -- a chainDoubleCross of the 2-region in the
+            // right column -- giving both boxes away for -5, a
+            // 10-box swing: the double-cross premise (the opponent
+            // must open another component) was false, because safe
+            // moves existed elsewhere on the board. Since PR #60 the
+            // controller declines the giveaway when a safe move
+            // exists, and the heuristic takes h,3,1. This is the
+            // first case decided by the controller (heuristic-offer):
+            // every earlier case is intercepted by the evaluator or
+            // minimax, or decided in opener mode.
+            height = 4;
+            width = 4;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("v,0,1");
+            game.move("h,1,0");
+            game.move("v,2,3");
+            game.move("v,0,2");
+            game.move("h,1,1");
+            game.move("h,1,2");
+            game.move("v,2,1");
+            game.move("v,0,0");
+            game.move("v,2,2");
+            game.move("h,1,3");
+            game.move("v,3,4");
+            game.move("h,2,2");
+            game.move("h,2,3");
+            game.move("v,1,3");
+            game.move("v,0,3");
+            game.move("h,3,2");
+            game.move("h,3,0");
+            game.move("v,2,0");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,0,4");
+        }
+
+        if(testCase == 16) {
+            // Forego a take at heuristic scale (case 12's decision,
+            // past minimax's reach). 3x3 board, AI (player 1) to
+            // move, E=16, no box claimed, so all 8 preset moves are
+            // toggles and the turn lands on player 1.
+            // Side counts:
+            //   2 2 1
+            //   3 1 0
+            //   2 1 0
+            // Optimal (exact solver): forego the take h,0,2 (-3) and
+            // play v,2,1 (+3) instead -- it gives (2,0) its 3rd side,
+            // so boxes (1,0) and (2,0) come to share their last edge;
+            // every other move is -7 (unique optimal, 6-box gap).
+            // The heuristic takes on 12/12 seeds (controller bails:
+            // no other region of length >= 3; greedyTake completes
+            // the box), and the unified engine falls through to it
+            // here (non-decomposed, E=16 > 15 minimax gate).
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,1");
+            game.move("h,0,3");
+            game.move("v,0,2");
+            game.move("h,1,3");
+            game.move("v,0,1");
+            game.move("v,1,0");
+            game.move("v,1,1");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,2,0");
         }
 }
