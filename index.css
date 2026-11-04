@@ -226,10 +226,6 @@
     fill: rgba(255, 255, 255, 0.95);
   }
 
-  .hidden {
-    display: none !important;
-  }
-
   /* Container dropping right under the scoreboard */
 .player-toggles {
   display: flex;
@@ -256,29 +252,7 @@
   width: 100%;
 }
 
-/* Dev test panel: its own little box, hidden until the Konami code. */
-.test-box {
-  position: relative;
-  gap: 1rem;
-  padding-top: 32px; /* clearance so the X doesn't sit on the dropdown */
-}
 
-.test-box-close {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  background: none;
-  border: none;
-  font-size: 1.25rem;
-  line-height: 1;
-  padding: 4px 6px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.test-box-close:hover {
-  color: var(--text-primary);
-}
 
 
 
@@ -300,13 +274,7 @@
   border-color: #0076ff; /* Highlight matching user interaction focus */
 }
 
-/* Test-panel dropdowns: shrink to fit the 340px panel instead of letting
-   long option text blow out the fieldset's min-content width. */
-.test-select {
-  flex: 1;
-  min-width: 0;
-  max-width: 100%;
-}
+
 
 
   /* ==========================================================================
@@ -409,17 +377,6 @@
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
     user-select: none;
-  }
-
-  /* AI think-time readout (test build): long status text, not a number. */
-  .control-group output#aiStatus {
-    width: auto;
-    min-width: 0;
-    flex: 1;
-    text-align: left;
-    font-size: 0.85rem;
-    font-weight: 500;
-    overflow-wrap: anywhere;
   }
 
   /* ==========================================================================

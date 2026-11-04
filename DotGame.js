@@ -1,34 +1,5 @@
-import { setupTestCase } from "./TestCases.js";
-
-// Console-log / status label for how the engine produced a move, from
-// the diagnostics it recorded on its last move() call. thinkMs is the
-// wall time of the engine call (measured by checkAImove), so the label
-// pairs the gate's predicted solve time with the actual think time —
-// the pred-vs-actual readout for the phone test build. '' when nothing
-// applies.
-function fmtSec(s) {
-    return s >= 10 ? s.toFixed(1) + 's' : s.toFixed(2) + 's';
-}
-function aiSuffixFor(engine, thinkMs) {
-    let base;
-    switch (engine.lastPhase) {
-        case 'evaluator': base = 'evaluator'; break;
-        case 'minimax': base = 'minimax'; break;
-        case 'heuristic-offer': base = 'heuristic-offer'; break;
-        case 'heuristic-quiet': base = 'heuristic-quiet'; break;
-        case 'mcts': base = 'MCTS - ' + (engine.lastIterations || 0).toLocaleString('en-US') + ' iterations'; break;
-        default: base = engine.lastExact ? 'evaluator' : '';
-    }
-    const parts = [];
-    if (base) parts.push(base);
-    if (engine.lastMinimaxAborted) parts.push('minimax aborted');
-    if (engine.lastPredSec != null) parts.push('pred ' + fmtSec(engine.lastPredSec));
-    if (thinkMs != null) parts.push('took ' + fmtSec(thinkMs / 1000));
-    return parts.join(' · ');
-}
-
-// Thinking indicator on the AI player's score card (head + rotating
-// gear in the card corner, shown by the .thinking class). The card
+// Thinking indicator on the AI player's score card (head + thought
+// dots in the card corner, shown by the .thinking class). The card
 // element and a per-call token are captured when the indicator is
 // set, so a stale clear — from a chained move within the same game,
 // or from an abandoned game whose engine call returns after a new
@@ -66,20 +37,6 @@ export default class DotGame {
         this.downLine = '';    // line where the current press started (tap detection)
         this.cancelled = false; // set true when a new game abandons this one mid-think
 
-
-        // Test-case harness (preset board positions for AI behavior testing)
-        // lives in TestCases.js. Both selects are optional: with no test UI
-        // present this is just a normal game (case 0, default test AI).
-        // If the test panel is hidden, that's also a normal game.
-        const testSel = document.getElementById('test-select');
-        const testAIEl = document.getElementById('test-ai');
-        const testBox = document.getElementById('testBox');
-        const testing = testSel && testBox && !testBox.classList.contains('hidden');
-        setupTestCase(
-            this,
-            testing ? testSel.options[testSel.selectedIndex].value : 0,
-            testAIEl ? testAIEl.value : 'ai'
-        );
 
         const canvas = this.ctx.canvas;
 
@@ -169,17 +126,7 @@ export default class DotGame {
         }
         return '';
     }
-    move(m, aiSuffix = '') {
-        // Every move goes to the console: "1-Human: h,0,0" for a person,
-        // "2-AI: v,1,0 (minimax)" for the engine, with how it decided.
-        const mover = this.players[this.turn-1];
-        console.log(this.turn + '-' + (mover.ai ? 'AI' : 'Human') + ': ' + m + (aiSuffix ? ' (' + aiSuffix + ')' : ''));
-        // On-screen copy of the AI label (the console is invisible on a
-        // phone): the think-time test build reads pred vs actual here.
-        if (aiSuffix) {
-            const statusEl = document.getElementById('aiStatus');
-            if (statusEl) statusEl.textContent = aiSuffix;
-        }
+    move(m) {
         let o,i,j,p,x,y,closed = false;
         [o,i,j] = m.split(',');
         i = parseInt(i);
@@ -353,11 +300,9 @@ export default class DotGame {
                 // heuristic opener.
                 if (this.cancelled || this.squaresLeft === 0) return;
                 const engine = this.players[this.turn-1].aiEngine;
-                const t0 = performance.now();
                 const m = await engine.move(this.hLines,this.vLines,this.squaresLeft);
-                const thinkMs = performance.now() - t0;
                 if (this.cancelled || this.squaresLeft === 0) return;
-                this.move(m, aiSuffixFor(engine, thinkMs));
+                this.move(m);
             } finally {
                 thinkingOff(thinkMark);
             }
