@@ -12,11 +12,15 @@
 //                       budget (see EVALUATOR_MAX_UNCLAIMED in
 //                       AIEngineHeuristic.js); gated-out decomposed
 //                       positions fall through.
-//   Step 2 (minimax):   E <= per-size minimaxLines -> minimax-with-cutoff
-//                       (solveRootCutoff) under a REAL deadline (80% of
-//                       the 1500ms VM budget); on timeout it falls
-//                       through instead of committing. This replaces the
-//                       old committed phase 4 (24-hour deadline, no bail).
+//   Step 2 (minimax):   TEST BUILD (2026-11-04): the GateModel equation
+//                       admits (predicted solve < 5s, laptop scale) ->
+//                       minimax-with-cutoff (solveRootCutoff) under a
+//                       raised 120s measurement cap; on timeout it falls
+//                       through instead of committing. (Pre-test-build
+//                       rule: E <= per-size minimaxLines under a REAL
+//                       deadline, 80% of the 1500ms VM budget. That rule
+//                       replaced the old committed phase 4, which had a
+//                       24-hour deadline and no bail.)
 //   Step 3 (heuristic): everything else -> AIEngineHeuristic play, via
 //                       the old phases below. MCTS-with-cutoff is NOT a
 //                       step (component (c) verdict NO).
@@ -58,6 +62,7 @@
 
 import AIEngineHeuristic, { EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS } from "./AIEngineHeuristic.js";
 import { solveRootCutoff, SolverAbort as CutoffAbort } from "./SolverCutoff.js";
+import { gatePrediction } from "./GateModel.js";
 import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js";
 import { buildBoard, fromMatrices, emptyLines, lineToString, boxesClosedBy } from "./Board.js";
 // NOTE (2026-10-26, component (b) integration): phase 4 now solves via
@@ -122,6 +127,21 @@ function minimaxLinesFor(W, H) {
     }
     return MINIMAX_LINES;
 }
+// TEST BUILD (2026-11-04, Mike's phone think-time measurement): step 2
+// admission is decided by the GateModel "Full" equation instead of the
+// E <= minimaxLines rule — admit iff the predicted solve time
+// (laptop-scale seconds, see GateModel.js) is below
+// GATE_PREDICT_MAX_SEC — and the solver runs under a raised
+// GATE_TEST_CAP_MS cap so phone testing observes actual think times
+// untruncated. A gate-admitted solve that hits the cap still falls
+// through to the heuristic (lastMinimaxAborted). NOT a production
+// configuration: the equation was fit on 94 playout-sampled positions
+// and needs refitting on realistic game positions, plus a measured
+// device speed factor, before this becomes the real gate (a ~10s
+// production cap is the discussed backstop). minimaxLinesFor is
+// retained for the E==1 phase label and harness compatibility.
+const GATE_PREDICT_MAX_SEC = 5;
+const GATE_TEST_CAP_MS = 120000;
 // Phase-4 deadline: 80% of the VM budget, leaving 20% for the
 // fallback move + overhead (1200ms). On SolverAbort the move falls
 // through to phase 3 / phase 1 (lastMinimaxAborted records it); the
@@ -495,6 +515,8 @@ export default class AIEngine {
         this.lastExact = false;
         this.lastPhase = null;   // 'evaluator' | 'minimax' | 'heuristic-offer' | 'heuristic-quiet' | 'mcts'
         this.lastMinimaxAborted = false; // true when phase 4 timed out and the move fell through
+        this.lastPredSec = null;  // GateModel prediction (laptop-scale seconds) when step 2 evaluated the gate, else null
+        this.lastSolveMs = null;  // wall time of the step-2 solve attempt (success or abort), else null
     }
 
     async move(h, v, squaresLeft) {
@@ -506,6 +528,8 @@ export default class AIEngine {
         this.lastIterations = 0;
         this.lastExact = false;
         this.lastMinimaxAborted = false;
+        this.lastPredSec = null;
+        this.lastSolveMs = null;
 
         // CASCADE (component (d), 2026-10-26), checked in order at every
         // move. MCTS-with-cutoff is NOT in this cascade (component (c)
@@ -547,18 +571,28 @@ export default class AIEngine {
             return lineToString(b, moves[0]);
         }
 
-        // Step 2 — minimax-with-cutoff UNDER A REAL DEADLINE, falling
-        // through on timeout/abort. Solved via the decomposition-cutoff
-        // solver (same exact values as solveRoot — (b) validated
-        // composite 740/740 moves, 720/720 values, 63/63 + 63/63
-        // small-board brute force — but with decomposition cutoff on
-        // fully-decomposed nodes). The old 24-hour deadline is replaced
-        // by MINIMAX_DEADLINE_MS (80% of VM budget); see its soundness note
-        // re single cutoff calls. Only SolverAbort falls through — any
-        // other throw propagates (a real bug, not a timeout).
-        if (E <= minimaxLinesFor(W, H)) {
+        // Step 2 — minimax-with-cutoff, admitted by the GateModel
+        // equation (TEST BUILD — see GATE_PREDICT_MAX_SEC above) under
+        // the raised test cap, falling through on timeout/abort.
+        // Solved via the decomposition-cutoff solver (same exact
+        // values as solveRoot — (b) validated composite 740/740 moves,
+        // 720/720 values, 63/63 + 63/63 small-board brute force — but
+        // with decomposition cutoff on fully-decomposed nodes). Only
+        // SolverAbort falls through — any other throw propagates (a
+        // real bug, not a timeout). DEADLINE SOUNDNESS: the cutoff's
+        // componentGameValue calls are not deadline-checked; under the
+        // old E-gate their overshoot past the deadline was bounded
+        // (~0.1s, see the note at MINIMAX_DEADLINE_MS), but
+        // equation-admitted positions can be larger, so a single call
+        // can overshoot the cap by more — accepted in the test build,
+        // where the cap is a measurement backstop, not a budget.
+        const gate = gatePrediction(b, hBits, vBits, sides, moves);
+        this.lastPredSec = gate.predSec;
+        if (gate.predSec < GATE_PREDICT_MAX_SEC) {
+            const t0 = Date.now();
             try {
-                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + MINIMAX_DEADLINE_MS).move;
+                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_TEST_CAP_MS).move;
+                this.lastSolveMs = Date.now() - t0;
                 this.lastPhase = 'minimax';
                 this.lastExact = true;
                 return lineToString(b, mv);
@@ -566,6 +600,7 @@ export default class AIEngine {
                 // NB: this is SolverCutoff's abort class (aliased), NOT
                 // this file's local SolverAbort used by solveRec below.
                 if (!(e instanceof CutoffAbort)) throw e;
+                this.lastSolveMs = Date.now() - t0;
                 this.lastMinimaxAborted = true;
             }
         }

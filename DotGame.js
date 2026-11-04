@@ -1,16 +1,30 @@
 import { setupTestCase } from "./TestCases.js";
 
-// Console-log label for how the engine produced a move, from the phase
-// it recorded on its last move() call. '' when nothing applies.
-function aiSuffixFor(engine) {
+// Console-log / status label for how the engine produced a move, from
+// the diagnostics it recorded on its last move() call. thinkMs is the
+// wall time of the engine call (measured by checkAImove), so the label
+// pairs the gate's predicted solve time with the actual think time —
+// the pred-vs-actual readout for the phone test build. '' when nothing
+// applies.
+function fmtSec(s) {
+    return s >= 10 ? s.toFixed(1) + 's' : s.toFixed(2) + 's';
+}
+function aiSuffixFor(engine, thinkMs) {
+    let base;
     switch (engine.lastPhase) {
-        case 'evaluator': return 'evaluator';
-        case 'minimax': return 'minimax';
-        case 'heuristic-offer': return 'heuristic-offer';
-        case 'heuristic-quiet': return 'heuristic-quiet';
-        case 'mcts': return 'MCTS - ' + (engine.lastIterations || 0).toLocaleString('en-US') + ' iterations';
-        default: return engine.lastExact ? 'evaluator' : '';
+        case 'evaluator': base = 'evaluator'; break;
+        case 'minimax': base = 'minimax'; break;
+        case 'heuristic-offer': base = 'heuristic-offer'; break;
+        case 'heuristic-quiet': base = 'heuristic-quiet'; break;
+        case 'mcts': base = 'MCTS - ' + (engine.lastIterations || 0).toLocaleString('en-US') + ' iterations'; break;
+        default: base = engine.lastExact ? 'evaluator' : '';
     }
+    const parts = [];
+    if (base) parts.push(base);
+    if (engine.lastMinimaxAborted) parts.push('minimax aborted');
+    if (engine.lastPredSec != null) parts.push('pred ' + fmtSec(engine.lastPredSec));
+    if (thinkMs != null) parts.push('took ' + fmtSec(thinkMs / 1000));
+    return parts.join(' · ');
 }
 
 export default class DotGame {
@@ -138,6 +152,12 @@ export default class DotGame {
         // "2-AI: v,1,0 (minimax)" for the engine, with how it decided.
         const mover = this.players[this.turn-1];
         console.log(this.turn + '-' + (mover.ai ? 'AI' : 'Human') + ': ' + m + (aiSuffix ? ' (' + aiSuffix + ')' : ''));
+        // On-screen copy of the AI label (the console is invisible on a
+        // phone): the think-time test build reads pred vs actual here.
+        if (aiSuffix) {
+            const statusEl = document.getElementById('aiStatus');
+            if (statusEl) statusEl.textContent = aiSuffix;
+        }
         let o,i,j,p,x,y,closed = false;
         [o,i,j] = m.split(',');
         i = parseInt(i);
@@ -309,9 +329,11 @@ export default class DotGame {
             // heuristic opener.
             if (this.cancelled || this.squaresLeft === 0) return;
             const engine = this.players[this.turn-1].aiEngine;
+            const t0 = performance.now();
             const m = await engine.move(this.hLines,this.vLines,this.squaresLeft);
+            const thinkMs = performance.now() - t0;
             if (this.cancelled || this.squaresLeft === 0) return;
-            this.move(m, aiSuffixFor(engine));
+            this.move(m, aiSuffixFor(engine, thinkMs));
         }
     }
 }
