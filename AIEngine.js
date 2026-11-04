@@ -127,21 +127,23 @@ function minimaxLinesFor(W, H) {
     }
     return MINIMAX_LINES;
 }
-// TEST BUILD (2026-11-04, Mike's phone think-time measurement): step 2
-// admission is decided by the GateModel "Full" equation instead of the
-// E <= minimaxLines rule — admit iff the predicted solve time
-// (laptop-scale seconds, see GateModel.js) is below
-// GATE_PREDICT_MAX_SEC — and the solver runs under a raised
-// GATE_TEST_CAP_MS cap so phone testing observes actual think times
-// untruncated. A gate-admitted solve that hits the cap still falls
-// through to the heuristic (lastMinimaxAborted). NOT a production
-// configuration: the equation was fit on 94 playout-sampled positions
-// and needs refitting on realistic game positions, plus a measured
-// device speed factor, before this becomes the real gate (a ~10s
-// production cap is the discussed backstop). minimaxLinesFor is
-// retained for the E==1 phase label and harness compatibility.
+// GATE CONFIGURATION (2026-11-04): step 2 admission is decided by the
+// GateModel "Full" equation instead of the E <= minimaxLines rule —
+// admit iff the predicted solve time (laptop-scale seconds, see
+// GateModel.js) is below GATE_PREDICT_MAX_SEC. The equation is the
+// refit against the shared-TT solver (PR #64); the previous fit
+// targeted the old solver and overestimated by a median 3.19x.
+// NO SOLVE CAP for now (Mike's decision, 2026-11-04): an admitted
+// solve runs to completion however long it takes, so phone retesting
+// observes true think times — including tail positions the equation
+// underestimates, which can think for minutes (the thinking
+// indicator shows on the AI's score card meanwhile). A production
+// cap decision follows the phone measurements. The SolverAbort fall-
+// through below is retained as armor but cannot fire while the
+// deadline is infinite. minimaxLinesFor is retained for the E==1
+// phase label and harness compatibility.
 const GATE_PREDICT_MAX_SEC = 5;
-const GATE_TEST_CAP_MS = 120000;
+const GATE_SOLVE_CAP_MS = Infinity;
 // Phase-4 deadline: 80% of the VM budget, leaving 20% for the
 // fallback move + overhead (1200ms). On SolverAbort the move falls
 // through to phase 3 / phase 1 (lastMinimaxAborted records it); the
@@ -572,26 +574,22 @@ export default class AIEngine {
         }
 
         // Step 2 — minimax-with-cutoff, admitted by the GateModel
-        // equation (TEST BUILD — see GATE_PREDICT_MAX_SEC above) under
-        // the raised test cap, falling through on timeout/abort.
+        // equation (see GATE_PREDICT_MAX_SEC above), currently with
+        // NO solve cap: an admitted solve runs to completion.
         // Solved via the decomposition-cutoff solver (same exact
         // values as solveRoot — (b) validated composite 740/740 moves,
         // 720/720 values, 63/63 + 63/63 small-board brute force — but
         // with decomposition cutoff on fully-decomposed nodes). Only
         // SolverAbort falls through — any other throw propagates (a
-        // real bug, not a timeout). DEADLINE SOUNDNESS: the cutoff's
-        // componentGameValue calls are not deadline-checked; under the
-        // old E-gate their overshoot past the deadline was bounded
-        // (~0.1s, see the note at MINIMAX_DEADLINE_MS), but
-        // equation-admitted positions can be larger, so a single call
-        // can overshoot the cap by more — accepted in the test build,
-        // where the cap is a measurement backstop, not a budget.
+        // real bug, not a timeout); with an infinite deadline the
+        // abort cannot fire, and the cutoff's componentGameValue
+        // calls (not deadline-checked) have no deadline to overshoot.
         const gate = gatePrediction(b, hBits, vBits, sides, moves);
         this.lastPredSec = gate.predSec;
         if (gate.predSec < GATE_PREDICT_MAX_SEC) {
             const t0 = Date.now();
             try {
-                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_TEST_CAP_MS).move;
+                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_SOLVE_CAP_MS).move;
                 this.lastSolveMs = Date.now() - t0;
                 this.lastPhase = 'minimax';
                 this.lastExact = true;
