@@ -168,6 +168,65 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Thinking indicator: head outline with a rotating gear, in the
+     card's top-right corner. DotGame adds .thinking to the card while
+     that player's engine call is in flight (AI players only). */
+  .score-side {
+    position: relative;
+  }
+
+  .thinking-icon {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 27px;
+    height: 27px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+  }
+
+  .score-side.thinking .thinking-icon {
+    opacity: 1;
+  }
+
+  .thinking-icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .thinking-icon .head-outline {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.95);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .thinking-icon .gear-spin {
+    fill: rgba(255, 255, 255, 0.95);
+  }
+
+  #p1Card .thinking-icon .gear-hole { fill: #BF616A; }
+  #p2Card .thinking-icon .gear-hole { fill: #5E81AC; }
+
+  .score-side.thinking .thinking-icon .gear-spin {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: gear-rotate 2.2s linear infinite;
+  }
+
+  @keyframes gear-rotate {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .score-side.thinking .thinking-icon .gear-spin {
+      animation: none;
+    }
+  }
+
   .hidden {
     display: none !important;
   }
