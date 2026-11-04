@@ -3,8 +3,8 @@
 // Exact Dots and Boxes solver with a DECOMPOSITION CUTOFF.
 //
 // Same algorithm as AIEngine's corrected solver (negamax +
-// alpha-beta + transposition table, fresh TT per root move, only
-// non-pruned values cached — the PR #37 discipline), with one change:
+// alpha-beta + bound-typed transposition table shared across root
+// moves), with one change:
 // at any search node whose position is FULLY DECOMPOSED (every
 // uncompleted box has >= 2 sides), the search stops expanding and
 // returns ControlValue's exact component-game value instead.
@@ -46,6 +46,22 @@
 //   branch (decomposition is position-determined), so no position ever
 //   mixes a bound entry with a cutoff value.
 //
+// TT SHARING (2026-11-04): the table is created ONCE per solve and
+// shared across all root moves (it used to be discarded and rebuilt
+// for each one). Sound because entries are bound-typed and
+// position-intrinsic: an EXACT entry is the position's true value
+// and a LOWER/UPPER entry is a true bound on it, for the side to
+// move in that frame — neither depends on the root move or window
+// that produced it, and root children are always searched at a full
+// window, so root values stay exact. Validated before shipping:
+// root values AND chosen moves identical to the fresh-table solver
+// on all 192 scatter positions (uncapped solves), three-way
+// agreement with an independent no-TT solver on 98 random small
+// boards, and the 16-case test sweep unchanged. Measured effect:
+// ~3.3x fewer nodes and ~3.1x less time over the 192 positions.
+// Stores are capped (TT_STORE_LIMIT below) so a marathon solve
+// cannot grow the table without bound; lookups are never capped.
+//
 // DECOMPOSITION DETECTION (cheap, incremental): `sides` (per-box side
 // counts) and `low` (count of boxes with 0 or 1 sides) are threaded down
 // the search. Sides only increase along a path, so a box leaves the low
@@ -71,6 +87,21 @@ class SolverAbort extends Error {}
 
 // Bound-typed TT flags (same scheme as ControlValue's micro game).
 const FLAG_EXACT = 0, FLAG_LOWER = 1, FLAG_UPPER = 2;
+
+// Store cap for the shared transposition table (see TT SHARING in
+// the header): once the table holds this many entries, stores stop
+// (lookups continue). A TT is a pure cache, so a missed store can
+// only cost time, never correctness. Sizing (measured 2026-11-04):
+// a solve stores ~0.35 entries per node visited; across the
+// 192-position validation set this cap binds only on the four
+// longest solves (all > 2M nodes, > 25 s laptop time) and bounds
+// the table's heap at roughly 250 MB on a marathon solve, versus
+// ~500 MB uncapped for the worst position measured.
+const TT_STORE_LIMIT = 1000000;
+
+function ttStore(tt, key, entry) {
+    if (tt.size < TT_STORE_LIMIT) tt.set(key, entry);
+}
 
 function popcount(b) {
     let c = 0;
@@ -133,7 +164,7 @@ function solveRecCutoff(b, hBits, vBits, turn, alpha, beta, tt, deadline, counte
             // Debug hook (off by default): record every cutoff node so a
             // validation mismatch can be localized to one node/multiset.
             if (opts.trace) opts.trace.push({ hBits, vBits, comps: comps.map(c => ({ ...c })), value });
-            tt.set(key, { v: value, flag: FLAG_EXACT });
+            ttStore(tt, key, { v: value, flag: FLAG_EXACT });
             return value;
         }
         // Component count above breakeven: fall through to normal
@@ -180,13 +211,14 @@ function solveRecCutoff(b, hBits, vBits, turn, alpha, beta, tt, deadline, counte
     }
     // Bound-typed store (pruned or not — bounds are sound entries).
     const flag = best <= alphaOrig ? FLAG_UPPER : (best >= betaOrig ? FLAG_LOWER : FLAG_EXACT);
-    tt.set(key, { v: best, flag });
+    ttStore(tt, key, { v: best, flag });
     return best;
 }
 
-// Same root discipline as AIEngine.solveRoot: fresh TT per root
-// move, full window, takes ordered before rest. Returns the best move
-// AND its value (the engine's solveRoot returns only the move).
+// Root discipline: ONE bound-typed transposition table shared by
+// every root move (see TT SHARING in the header), full window per
+// root move, takes ordered before rest. Returns the best move AND
+// its value (the engine's solveRoot returns only the move).
 function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, opts = {}) {
     const o = { cutoffMinE: 0, cutoffMaxComps: Infinity, ...opts };
     const counter = { n: 0 };
@@ -201,9 +233,13 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
         }
         (isTake ? takes : rest).push(m);
     }
+    // One table for the whole solve: root moves transpose into each
+    // other's subtrees constantly (chain links played in different
+    // orders reach the same positions), and bound-typed entries are
+    // sound regardless of which root move produced them.
+    const tt = new Map();
     let bestMove = moves[0], bestVal = -Infinity;
     for (const m of takes.concat(rest)) {
-        const tt = new Map();
         const s = withLine(b, hBits, vBits, m);
         const childSides = sides.slice();
         let childLow = low, closed = 0;
