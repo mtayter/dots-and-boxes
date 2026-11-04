@@ -67,46 +67,6 @@
             </fieldset>
             </div>
 
-            <!-- Box 3 (right): AI think-time readout (test build) -->
-            <div class="panel-box ai-box">
-            <div class="control-group">
-                <label for="aiStatus">AI think</label>
-                <output id="aiStatus">—</output>
-            </div>
-            </div>
-
-            <!-- Box 4 (right): dev test panel, hidden until the Konami code -->
-            <div class="panel-box test-box hidden" id="testBox">
-                <button class="test-box-close" id="testBoxClose" aria-label="Hide test panel">×</button>
-                <div class="control-group">
-                <label for="test-select">Test case</label>
-                <select id="test-select" class="toggle-select test-select" aria-label="Test case">
-                    <option value="1" selected>1: smallest area to give</option>
-                    <option value="2">2: smallest area to give (2nd)</option>
-                    <option value="3">3: smallest area to give (3rd)</option>
-                    <option value="4">4: knowing when to not take a square</option>
-                    <option value="5">5: single box vs larger areas</option>
-                    <option value="6">6: smallest available area</option>
-                    <option value="7">7: don't take squares</option>
-                    <option value="8">8: loop leave-4</option>
-                    <option value="9">9: chain choice (4-chain)</option>
-                    <option value="10">10: double-cross loses (2-chain)</option>
-                    <option value="11">11: double-cross loses (2-chain, all loops)</option>
-                    <option value="12">12: decline a take (non-decomposed)</option>
-                    <option value="13">13: sacrifice a box (E=20)</option>
-                    <option value="14">14: lottery pick (E=20)</option>
-                    <option value="15">15: double-cross guard (4x4)</option>
-                    <option value="16">16: forego a take (E=16)</option>
-                </select>
-                </div>
-                <div class="control-group">
-                <label for="test-ai">TEST PLAYER</label>
-                <select id="test-ai" class="toggle-select test-select" aria-label="Test player">
-                    <option value="ai" selected>AI</option>
-                    <option value="human">Human</option>
-                </select>
-                </div>
-            </div>
         </aside>
     </main>
     <div id="gameOverBanner" class="game-over-banner" role="dialog" aria-live="polite">
