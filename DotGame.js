@@ -27,6 +27,28 @@ function aiSuffixFor(engine, thinkMs) {
     return parts.join(' · ');
 }
 
+// Thinking indicator on the AI player's score card (head + rotating
+// gear in the card corner, shown by the .thinking class). The card
+// element and a per-call token are captured when the indicator is
+// set, so a stale clear — from a chained move within the same game,
+// or from an abandoned game whose engine call returns after a new
+// game started — can never erase a newer call's indicator.
+function thinkingOn(game) {
+    const el = document.getElementById(game.turn === 1 ? 'p1Card' : 'p2Card');
+    if (!el || !el.classList) return null;
+    const token = {};
+    el._thinkingToken = token;
+    el.classList.add('thinking');
+    return { el, token };
+}
+function thinkingOff(mark) {
+    if (!mark) return;
+    if (mark.el._thinkingToken === mark.token) {
+        mark.el._thinkingToken = null;
+        mark.el.classList.remove('thinking');
+    }
+}
+
 export default class DotGame {
     constructor(height,width,player1,player2,ctx,scoreboard) {
         this.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
@@ -320,20 +342,25 @@ export default class DotGame {
         // canvas, flashing the old board over the new game.
         if (this.cancelled) return;
         if(this.players[this.turn-1].ai) {
-            // Let the browser paint the previous move before the AI blocks
-            // the main thread while thinking.
-            await this.waitForPaint();
-            // Game over while waiting to think (reachable when two AI
-            // chains share a board): never ask the engine to move on a
-            // full board — it has no legal move there and crashes in the
-            // heuristic opener.
-            if (this.cancelled || this.squaresLeft === 0) return;
-            const engine = this.players[this.turn-1].aiEngine;
-            const t0 = performance.now();
-            const m = await engine.move(this.hLines,this.vLines,this.squaresLeft);
-            const thinkMs = performance.now() - t0;
-            if (this.cancelled || this.squaresLeft === 0) return;
-            this.move(m, aiSuffixFor(engine, thinkMs));
+            const thinkMark = thinkingOn(this);
+            try {
+                // Let the browser paint the previous move before the AI blocks
+                // the main thread while thinking.
+                await this.waitForPaint();
+                // Game over while waiting to think (reachable when two AI
+                // chains share a board): never ask the engine to move on a
+                // full board — it has no legal move there and crashes in the
+                // heuristic opener.
+                if (this.cancelled || this.squaresLeft === 0) return;
+                const engine = this.players[this.turn-1].aiEngine;
+                const t0 = performance.now();
+                const m = await engine.move(this.hLines,this.vLines,this.squaresLeft);
+                const thinkMs = performance.now() - t0;
+                if (this.cancelled || this.squaresLeft === 0) return;
+                this.move(m, aiSuffixFor(engine, thinkMs));
+            } finally {
+                thinkingOff(thinkMark);
+            }
         }
     }
 }

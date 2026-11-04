@@ -35,6 +35,14 @@ function init() {
         // the abandoned game keeps move()ing and rendering its old board
         // onto this same canvas.
         if (dotGame) { dotGame.cancelled = true; dotGame.destroy(); }
+        // Clear any thinking indicator the abandoned game left on a
+        // score card (its own late clear is token-guarded and would
+        // no-op against the new game's marks anyway).
+        for (const id of ['p1Card', 'p2Card']) {
+            const card = document.getElementById(id);
+            card._thinkingToken = null;
+            card.classList.remove('thinking');
+        }
         const height = parseInt(heightRange.value);
         const width = parseInt(widthRange.value);
         const player1 = new Player('1','#BF616A','#E5B3B8',player1Type.value);
