@@ -1,5 +1,5 @@
-// Thinking indicator on the AI player's score card (head + thought
-// dots in the card corner, shown by the .thinking class). The card
+// Thinking indicator on the AI player's score card (an hourglass
+// in the card corner, shown by the .thinking class). The card
 // element and a per-call token are captured when the indicator is
 // set, so a stale clear — from a chained move within the same game,
 // or from an abandoned game whose engine call returns after a new
