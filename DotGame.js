@@ -1,3 +1,5 @@
+import { setupTestCase } from "./TestCases.js";
+
 // Thinking indicator on the AI player's score card (an hourglass
 // in the card corner, shown by the .thinking class). The card
 // element and a per-call token are captured when the indicator is
@@ -37,11 +39,25 @@ export default class DotGame {
         this.downLine = '';    // line where the current press started (tap detection)
         this.cancelled = false; // set true when a new game abandons this one mid-think
 
-        // Kick the AI chain: if player 1 is the AI it moves first, and
-        // nothing else would ever call checkAImove() — later moves only
-        // chain from move(). (This bootstrap used to hide inside the
-        // removed test-case setup's case 0.)
-        this.checkAImove();
+        // Test-case harness (preset board positions for AI behavior
+        // testing) lives in TestCases.js. Both selects are optional:
+        // with no test UI present, or the panel hidden, this is a
+        // normal game. A normal game kicks the AI chain directly —
+        // if player 1 is the AI it moves first, and nothing else
+        // would ever call checkAImove() (later moves only chain from
+        // move()). Restored 2026-11-05 (was removed in the PR #69
+        // cleanup) with the PR #71 bootstrap kept explicit: the kick
+        // must NOT route through setupTestCase's case 0 again.
+        const testSel = document.getElementById('test-select');
+        const testAIEl = document.getElementById('test-ai');
+        const testBox = document.getElementById('testBox');
+        const testing = testSel && testBox && !testBox.classList.contains('hidden');
+        const testCase = testing ? Number(testSel.options[testSel.selectedIndex].value) : 0;
+        if (testCase > 0) {
+            setupTestCase(this, testCase, testAIEl ? testAIEl.value : 'ai');
+        } else {
+            this.checkAImove();
+        }
 
         const canvas = this.ctx.canvas;
 
