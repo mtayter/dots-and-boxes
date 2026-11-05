@@ -37,6 +37,11 @@ export default class DotGame {
         this.downLine = '';    // line where the current press started (tap detection)
         this.cancelled = false; // set true when a new game abandons this one mid-think
 
+        // Kick the AI chain: if player 1 is the AI it moves first, and
+        // nothing else would ever call checkAImove() — later moves only
+        // chain from move(). (This bootstrap used to hide inside the
+        // removed test-case setup's case 0.)
+        this.checkAImove();
 
         const canvas = this.ctx.canvas;
 
