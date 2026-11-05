@@ -219,6 +219,12 @@ function solveRecCutoff(b, hBits, vBits, turn, alpha, beta, tt, deadline, counte
 // every root move (see TT SHARING in the header), full window per
 // root move, takes ordered before rest. Returns the best move AND
 // its value (the engine's solveRoot returns only the move).
+// ABORT SALVAGE: if the deadline fires mid-search after at least
+// one root move has been fully scored, the search returns that
+// best completed move flagged `aborted` instead of throwing —
+// its value is exact, so it beats discarding the whole search.
+// With zero completed root moves the SolverAbort propagates and
+// the caller falls back as before.
 function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, opts = {}) {
     const o = { cutoffMinE: 0, cutoffMaxComps: Infinity, ...opts };
     const counter = { n: 0 };
@@ -238,7 +244,7 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
     // orders reach the same positions), and bound-typed entries are
     // sound regardless of which root move produced them.
     const tt = new Map();
-    let bestMove = moves[0], bestVal = -Infinity;
+    let bestMove = moves[0], bestVal = -Infinity, completed = 0;
     for (const m of takes.concat(rest)) {
         const s = withLine(b, hBits, vBits, m);
         const childSides = sides.slice();
@@ -249,11 +255,20 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
             if (old === 1) childLow--;
             if (old + 1 === 4) closed++;
         }
-        const val = closed > 0
-            ? closed + solveRecCutoff(b, s.hBits, s.vBits, 1, -Infinity, Infinity,
-                tt, deadline, counter, childSides, childLow, stats, o)
-            : -solveRecCutoff(b, s.hBits, s.vBits, 0, -Infinity, Infinity,
-                tt, deadline, counter, childSides, childLow, stats, o);
+        let val;
+        try {
+            val = closed > 0
+                ? closed + solveRecCutoff(b, s.hBits, s.vBits, 1, -Infinity, Infinity,
+                    tt, deadline, counter, childSides, childLow, stats, o)
+                : -solveRecCutoff(b, s.hBits, s.vBits, 0, -Infinity, Infinity,
+                    tt, deadline, counter, childSides, childLow, stats, o);
+        } catch (e) {
+            if (e instanceof SolverAbort && completed > 0) {
+                return { move: bestMove, value: bestVal, nodes: counter.n, stats, aborted: true };
+            }
+            throw e;
+        }
+        completed++;
         if (val > bestVal) { bestVal = val; bestMove = m; }
     }
     return { move: bestMove, value: bestVal, nodes: counter.n, stats };

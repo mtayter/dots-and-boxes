@@ -135,8 +135,9 @@ function minimaxLinesFor(W, H) {
 // targeted the old solver and overestimated by a median 3.19x.
 // SOLVE CAP (restored 2026-11-05, Mike's decision after his phone
 // retest): an admitted solve gets GATE_SOLVE_CAP_MS of wall time on
-// whatever device is running it; on SolverAbort the move falls
-// through to the heuristic below. The cap exists for the equation's
+// whatever device is running it; on SolverAbort the search salvages
+// its best fully-scored root move when it has one, and otherwise
+// falls through to the heuristic below. The cap exists for the equation's
 // tail: during the uncapped retest window (2026-11-04/05) a 4x4
 // self-play position predicted under 5s solved for 36+ minutes on
 // the VM. minimaxLinesFor is retained for the E==1 phase label and
@@ -593,11 +594,17 @@ export default class AIEngine {
         if (gate && gate.predSec < GATE_PREDICT_MAX_SEC) {
             const t0 = Date.now();
             try {
-                const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_SOLVE_CAP_MS).move;
+                const res = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_SOLVE_CAP_MS);
                 this.lastSolveMs = Date.now() - t0;
+                // res.aborted: the cap fired but at least one root
+                // move was fully scored — play the best of those
+                // (exact-valued) instead of the heuristic fallback.
+                // lastExact stays false: the salvaged move's value
+                // is exact, but the choice isn't proven optimal.
+                this.lastMinimaxAborted = res.aborted === true;
                 this.lastPhase = 'minimax';
-                this.lastExact = true;
-                return lineToString(b, mv);
+                this.lastExact = res.aborted !== true;
+                return lineToString(b, res.move);
             } catch (e) {
                 // NB: this is SolverCutoff's abort class (aliased), NOT
                 // this file's local SolverAbort used by solveRec below.
