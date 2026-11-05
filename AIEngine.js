@@ -511,6 +511,7 @@ function countOfferedRegions(heuristic, h, v) {
 
 export default class AIEngine {
     constructor(options = {}) {
+        this.level = options.level ?? 'advanced'; // 'beginner' disables step 2 (minimax) below
         this.epsilon = options.epsilon ?? 0.15;
         this.heuristic = new AIEngineHeuristic();
         this.lastIterations = 0;
@@ -569,7 +570,9 @@ export default class AIEngine {
         }
 
         if (E === 1) {
-            this.lastPhase = E <= minimaxLinesFor(W, H) ? 'minimax' : 'heuristic-quiet';
+            // The only legal move — no search happens at either level;
+            // the phase label just records how it would have been classed.
+            this.lastPhase = (this.level !== 'beginner' && E <= minimaxLinesFor(W, H)) ? 'minimax' : 'heuristic-quiet';
             return lineToString(b, moves[0]);
         }
 
@@ -584,9 +587,11 @@ export default class AIEngine {
         // real bug, not a timeout); with an infinite deadline the
         // abort cannot fire, and the cutoff's componentGameValue
         // calls (not deadline-checked) have no deadline to overshoot.
-        const gate = gatePrediction(b, hBits, vBits, sides, moves);
-        this.lastPredSec = gate.predSec;
-        if (gate.predSec < GATE_PREDICT_MAX_SEC) {
+        // Beginner level: step 2 is skipped entirely — no gate
+        // evaluation, no search; play falls to the heuristic below.
+        const gate = this.level === 'beginner' ? null : gatePrediction(b, hBits, vBits, sides, moves);
+        this.lastPredSec = gate ? gate.predSec : null;
+        if (gate && gate.predSec < GATE_PREDICT_MAX_SEC) {
             const t0 = Date.now();
             try {
                 const mv = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_SOLVE_CAP_MS).move;
