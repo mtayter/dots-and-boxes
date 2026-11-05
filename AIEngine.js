@@ -133,17 +133,16 @@ function minimaxLinesFor(W, H) {
 // GateModel.js) is below GATE_PREDICT_MAX_SEC. The equation is the
 // refit against the shared-TT solver (PR #64); the previous fit
 // targeted the old solver and overestimated by a median 3.19x.
-// NO SOLVE CAP for now (Mike's decision, 2026-11-04): an admitted
-// solve runs to completion however long it takes, so phone retesting
-// observes true think times — including tail positions the equation
-// underestimates, which can think for minutes (the thinking
-// indicator shows on the AI's score card meanwhile). A production
-// cap decision follows the phone measurements. The SolverAbort fall-
-// through below is retained as armor but cannot fire while the
-// deadline is infinite. minimaxLinesFor is retained for the E==1
-// phase label and harness compatibility.
+// SOLVE CAP (restored 2026-11-05, Mike's decision after his phone
+// retest): an admitted solve gets GATE_SOLVE_CAP_MS of wall time on
+// whatever device is running it; on SolverAbort the move falls
+// through to the heuristic below. The cap exists for the equation's
+// tail: during the uncapped retest window (2026-11-04/05) a 4x4
+// self-play position predicted under 5s solved for 36+ minutes on
+// the VM. minimaxLinesFor is retained for the E==1 phase label and
+// harness compatibility.
 const GATE_PREDICT_MAX_SEC = 5;
-const GATE_SOLVE_CAP_MS = Infinity;
+const GATE_SOLVE_CAP_MS = 10000;
 // Phase-4 deadline: 80% of the VM budget, leaving 20% for the
 // fallback move + overhead (1200ms). On SolverAbort the move falls
 // through to phase 3 / phase 1 (lastMinimaxAborted records it); the
@@ -577,16 +576,16 @@ export default class AIEngine {
         }
 
         // Step 2 — minimax-with-cutoff, admitted by the GateModel
-        // equation (see GATE_PREDICT_MAX_SEC above), currently with
-        // NO solve cap: an admitted solve runs to completion.
+        // equation (see GATE_PREDICT_MAX_SEC above) and capped at
+        // GATE_SOLVE_CAP_MS of wall time.
         // Solved via the decomposition-cutoff solver (same exact
         // values as solveRoot — (b) validated composite 740/740 moves,
         // 720/720 values, 63/63 + 63/63 small-board brute force — but
         // with decomposition cutoff on fully-decomposed nodes). Only
         // SolverAbort falls through — any other throw propagates (a
-        // real bug, not a timeout); with an infinite deadline the
-        // abort cannot fire, and the cutoff's componentGameValue
-        // calls (not deadline-checked) have no deadline to overshoot.
+        // real bug, not a timeout); the cutoff's componentGameValue
+        // calls are not deadline-checked, so a solve can overshoot
+        // the cap by one component evaluation (bounded, ~0.1s).
         // Beginner level: step 2 is skipped entirely — no gate
         // evaluation, no search; play falls to the heuristic below.
         const gate = this.level === 'beginner' ? null : gatePrediction(b, hBits, vBits, sides, moves);
