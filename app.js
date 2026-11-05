@@ -49,7 +49,8 @@ function init() {
         gameOverBanner.classList.remove('show');
         dotGame = new DotGame(height,width,player1,player2,ctx,scoreboard);
         scoreboard.reset();
-        // reset() marks P1 active; re-sync the indicator to the actual turn.
+        // setupTestCase() may leave P2 to move (e.g. test 8); reset() always
+        // marks P1 active, so re-sync the indicator to the actual turn.
         scoreboard.switchActivePlayer(dotGame.turn);
         dotGame.render();
     }
@@ -73,6 +74,29 @@ function init() {
     window.addEventListener('resize', handleResize)
     handleResize();
 
+    // The X in the test panel corner hides it (no code needed to close).
+    document.getElementById('testBoxClose').addEventListener('click', () => {
+        document.getElementById('testBox').classList.add('hidden');
+    });
+
+    // Easter egg: the Konami code (up up down down left right left right B A)
+    // toggles the hidden dev test panel.
+    const konamiSequence = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
+                            'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight',
+                            'b', 'a'];
+    let konamiProgress = 0;
+    document.addEventListener('keydown', (e) => {
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        if (key === konamiSequence[konamiProgress]) {
+            konamiProgress++;
+            if (konamiProgress === konamiSequence.length) {
+                konamiProgress = 0;
+                document.getElementById('testBox').classList.toggle('hidden');
+            }
+        } else {
+            konamiProgress = (key === konamiSequence[0]) ? 1 : 0;
+        }
+    });
 }
 
 init();
