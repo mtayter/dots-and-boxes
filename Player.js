@@ -5,12 +5,17 @@ export default class Player {
         this.name = name;
         this.color = color;
         this.hover = hover;
-        if(ai == "ai") {
-            // The one unified AI engine, fixed strength.
+        // ai carries the player-type dropdown's value: 'human',
+        // 'ai-beginner' (engine with minimax disabled), or
+        // 'ai-advanced' (the full engine). Plain 'ai' from older
+        // callers means advanced.
+        if(ai == "ai" || ai == "ai-beginner" || ai == "ai-advanced") {
             this.ai = true;
-            this.aiEngine = new AIEngine();
+            this.aiLevel = ai == "ai-beginner" ? 'beginner' : 'advanced';
+            this.aiEngine = new AIEngine({ level: this.aiLevel });
         } else {
             this.ai = false;
+            this.aiLevel = null;
             this.aiEngine = null;
         }
     }

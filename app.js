@@ -20,8 +20,9 @@ function init() {
                                     document.getElementById('p2Card'),
                                     document.getElementById('player1Score'),
                                     document.getElementById('player2Score'));
-    // AI always plays at the engine's fixed strength; the
-    // engine takes no strength parameter.
+    // The player-type dropdowns carry the AI level: 'ai-beginner'
+    // is the engine with minimax disabled, 'ai-advanced' the full
+    // engine. Player parses the value; nothing else needs it.
     heightRange.addEventListener('input', (e) => {
         heightValue.textContent = e.target.value;
     });
