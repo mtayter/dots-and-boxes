@@ -181,6 +181,34 @@ import Player from "./Player.js";
            shared edge v,2,3 is drawn 33rd and closes (2,2) and
            (3,2) together, making 4 closing draws in total, so the
            34 preset moves land the turn on player 1 (the AI).
+        18) Engine PASS / solver PASS; standalone heuristic FAIL
+           (its control rule): the decomposed counterexample that
+           survives the one-move-capture rule (PR #82). 5x3, fully
+           decomposed (U=7, 3 components), AI (player 1) to move.
+           Components: an offered 2-chain (0,0)-(1,0) (micro
+           {2,1,2}), a 4-ring at cols 3-4 rows 0-1, and an unripe
+           singleton at (0,2) (micro {single:2}); the other eight
+           boxes are claimed separators. No ready singleton and no
+           enclosed domino exists, so the capture rule does not
+           fire. The standard control move -- double-cross the
+           2-chain by ripening its far end (h,1,0) -- is worth -5:
+           the opponent takes both boxes, then ripens the
+           singleton instead of opening the ring, handing the
+           opening duty and the ring's control straight back (the
+           unripe singleton is a parity token). Taking the chain
+           with v,0,1 is the unique optimal at +5, verified
+           against the exact solver (opening the ring is -5,
+           ripening the singleton is -3) -- a 10-box swing on a
+           7-box position. The unified engine passes via its exact
+           evaluator branch; the standalone heuristic's controller
+           plays the double-cross. Found 2026-11-06 by exact
+           search over control-rule failures (708 of 2,484
+           single-offer states with an unripe singleton or fresh
+           companions; this is the smallest first-move-clean
+           instance with a ring companion). ORDER: the 30 preset
+           moves are drawn in id order with h,0,0 last; the 8
+           closing draws (one per separator box) land the turn on
+           player 1 (the AI).
         */
 
 
@@ -190,7 +218,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"17") must stay in sync with those <option> values.
+ * values here ("0"-"18") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -1047,6 +1075,64 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,3,4");
             game.move("v,3,5");
             game.move("v,2,3");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,0,0");
+        }
+        if(testCase == 18) {
+            // Decomposed control-rule counterexample: take the
+            // offered 2-chain, do NOT double-cross it. 3 rows x
+            // 5 cols, AI (player 1) to move. Components (see the
+            // header comment): offered 2-chain (0,0)-(1,0), a
+            // 4-ring at cols 3-4 rows 0-1, an unripe singleton at
+            // (0,2), eight claimed separator boxes. Optimal:
+            // v,0,1 (+5, unique); the double-cross h,1,0 is -5.
+            // Ordering: preset moves in id order, h,0,0 last;
+            // the 8 closing draws land the turn on player 1.
+            height = 3;
+            width = 5;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,1");
+            game.move("h,0,2");
+            game.move("h,1,1");
+            game.move("h,1,2");
+            game.move("h,1,3");
+            game.move("h,2,0");
+            game.move("h,2,1");
+            game.move("h,2,2");
+            game.move("h,2,3");
+            game.move("h,3,0");
+            game.move("h,3,2");
+            game.move("h,3,3");
+            game.move("h,4,0");
+            game.move("h,4,2");
+            game.move("h,4,3");
+            game.move("v,0,0");
+            game.move("v,0,2");
+            game.move("v,0,3");
+            game.move("v,0,5");
+            game.move("v,1,0");
+            game.move("v,1,1");
+            game.move("v,1,2");
+            game.move("v,1,3");
+            game.move("v,1,5");
+            game.move("v,2,1");
+            game.move("v,2,2");
+            game.move("v,2,3");
+            game.move("v,2,4");
+            game.move("v,2,5");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("h,0,0");
         }
