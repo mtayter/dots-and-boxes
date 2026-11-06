@@ -224,8 +224,8 @@ import Player from "./Player.js";
  * @param {object} game - the DotGame under construction (its board arrays,
  *                        players, move() and checkAImove() are all used)
  * @param {string|number} testCase - selected case; "0" means not testing
- * @param {string} testAI - player under test: 'ai' (the unified engine)
- *                         or 'human' (you play the test seat yourself)
+ * @param {string} testAI - player under test: 'ai-beginner' or
+ *                         'ai-advanced' (from the #test-ai select)
  */
 export function setupTestCase(game, testCase, testAI) {
     let height, width;

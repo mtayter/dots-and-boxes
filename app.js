@@ -1,6 +1,7 @@
 import DotGame from './DotGame.js';
 import Player from './Player.js';
 import Scoreboard from './Scoreboard.js';
+import initSavedGames from './SavedGames.js';
 
 function init() {
     const canvas = document.getElementById('board');
@@ -55,6 +56,27 @@ function init() {
         dotGame.render();
     }
     newGameButton.addEventListener('click', newGame);
+
+    // Saved-games review box: it builds its own frozen DotGame for
+    // the board, so it needs to tear down whatever game is live
+    // (same teardown as newGame, plus hiding the test panel so the
+    // DotGame constructor takes the normal-game path) and to
+    // install its game as the current one.
+    initSavedGames({
+        ctx,
+        scoreboard,
+        abandonCurrent: () => {
+            if (dotGame) { dotGame.cancelled = true; dotGame.destroy(); }
+            for (const id of ['p1Card', 'p2Card']) {
+                const card = document.getElementById(id);
+                card._thinkingToken = null;
+                card.classList.remove('thinking');
+            }
+            gameOverBanner.classList.remove('show');
+            document.getElementById('testBox').classList.add('hidden');
+        },
+        adopt: (game) => { dotGame = game; },
+    });
     // Dismiss the result banner: OK button or a click on the backdrop
     // (outside the card). Starting a fresh game stays on the New Game button.
     okButton.addEventListener('click', () => gameOverBanner.classList.remove('show'));
