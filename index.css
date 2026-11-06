@@ -260,6 +260,48 @@
   color: var(--text-primary);
 }
 
+/* Saved-games review box: game picker, step buttons, move counter. */
+.games-box {
+  gap: 0.75rem;
+}
+
+.games-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.games-step {
+  padding: 4px 14px;
+  font-size: 13px;
+  background-color: #222;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.games-step:hover:not(:disabled) {
+  border-color: #0076ff;
+}
+
+.games-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#games-counter {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.games-info {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 
 
 
