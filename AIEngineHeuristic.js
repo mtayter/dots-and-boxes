@@ -180,6 +180,8 @@ export default class AIEngineHeuristic {
         }
 
         if (threes.length > 0) {
+            const capture = this.decomposedOneMoveCapture();
+            if (capture) return capture;
             const m = this.controllerMove(threes);
             if (m) return m;
             return this.greedyTake(threes);
@@ -271,6 +273,50 @@ export default class AIEngineHeuristic {
             }
         }
         return true;
+    }
+    // ONE-MOVE CAPTURES on fully decomposed boards (2026-11-06,
+    // Mike's rule, proved + exhaustively checked against the exact
+    // micro-game evaluator): if a component can be COMPLETELY
+    // captured by one closing move -- gain g, no residue -- then
+    // V(component + rest) = g + V(rest). Capturing first attains
+    // that bound; a closing move elsewhere commutes (capture next,
+    // same total); a non-closing move elsewhere hands the opponent
+    // the capture. So capturing first is always optimal. Only two
+    // component shapes qualify:
+    //   - a ready singleton: one 3-sided box whose region has size 1
+    //     (micro {single:1});
+    //   - an enclosed domino: a size-2 region whose boxes are both
+    //     3-sided, so their shared edge is each box's only untaken
+    //     edge and closes both (micro {2,1,1}).
+    // NOT included: a 3-sided box inside a longer chain/loop (taking
+    // there is the control question), a {single:2} (not takeable --
+    // playing in it ripens it and passes the turn), and a 2-chain
+    // with an open end ({2,1,2} / {2,2,2}). Runs only when every
+    // box has >= 2 sides (fully decomposed) and only after the
+    // evaluator branch above has declined (out-of-gate / timed
+    // out), so in-gate exact play is unchanged. Picks randomly
+    // among qualifying captures, as elsewhere.
+    decomposedOneMoveCapture() {
+        for (let i = 0; i < this.y; i++) {
+            for (let j = 0; j < this.x; j++) {
+                if (this.squares[i][j] < 2) return null;
+            }
+        }
+        const pool = [];
+        for (const region of this.buildRegions()) {
+            if (region.length === 1) {
+                const [i, j] = region[0];
+                if (this.squares[i][j] === 3) {
+                    pool.push(this.untakenEdges(i, j)[0]);
+                }
+            } else if (region.length === 2) {
+                const [[i, j], [ni, nj]] = region;
+                if (this.squares[i][j] === 3 && this.squares[ni][nj] === 3) {
+                    pool.push(this.sharedEdge(i, j, ni, nj));
+                }
+            }
+        }
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
     // True when some untaken edge touches only boxes with <2 sides --
     // a move that creates no 3-sided box. (The same safety notion as
