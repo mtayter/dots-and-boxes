@@ -79,9 +79,26 @@
 //   replaces. (Both default to unbounded; the calibration sets them.)
 // Exactness is NEVER traded: when the cutoff is skipped for cost
 // reasons, the node is expanded normally, which is exact too.
+//
+// MACRO-ENTRY FILTER (2026-11-05, Mike's design + threshold): at
+// every node, pure entries into a cascade unit of >= 3 ripe boxes
+// (see MacroUnits.js) are generated only once per unit — the
+// canonical entry — because their subtrees are identical: any
+// first move into a unit hands the opponent the same forced
+// sweep, and the sweeper's control decision does not depend on
+// the entry point. Units of 1-2 boxes keep ALL their entries:
+// there the equivalence fails (the opponent can decline a stub
+// entry via the far stub and force the opener to take his own
+// unit — see MacroUnits.js for the verified counterexample).
+// Validated before shipping: 531 value-checked positions, zero
+// divergences (random boards, targeted decomposed endgames with
+// chains 3-10 and loops, and the 181 recorded league positions
+// at production settings, where it also turned 56 cap-salvages
+// into completed solves with no downgrades).
 
 import { buildBoard, fromMatrices, emptyLines } from "./Board.js";
 import { extractComponents, componentGameValue, getAnomalies } from "./ControlValue.js";
+import { unitSkipSet, MACRO_MIN_UNIT } from "./MacroUnits.js";
 
 class SolverAbort extends Error {}
 
@@ -182,8 +199,20 @@ function solveRecCutoff(b, hBits, vBits, turn, alpha, beta, tt, deadline, counte
         (isTake ? takes : rest).push(m);
     }
 
+    // MACRO: drop non-canonical pure entries into cascade units
+    // of >= MACRO_MIN_UNIT boxes (see header). Takes are never
+    // filtered; short units keep every entry.
+    let restGen = rest;
+    {
+        const u = unitSkipSet(b, hBits, vBits, sides, moves, MACRO_MIN_UNIT);
+        if (u.skip.size > 0) {
+            stats.macroSkips += u.skip.size;
+            restGen = rest.filter(m => !u.skip.has(m));
+        }
+    }
+
     let best = -Infinity;
-    for (const m of takes.concat(rest)) {
+    for (const m of takes.concat(restGen)) {
         const s = withLine(b, hBits, vBits, m);
         const childSides = sides.slice();
         let childLow = low, closed = 0;
@@ -229,7 +258,7 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
     const o = { cutoffMinE: 0, cutoffMaxComps: Infinity, ...opts };
     const counter = { n: 0 };
     const stats = { cutoffs: 0, cutoffMs: 0, cutoffComps: 0, cutoffMaxComps: 0,
-                    cutoffSkipped: 0 };
+                    cutoffSkipped: 0, macroSkips: 0 };
     const { sides, low } = computeSidesLow(b, hBits, vBits);
     const takes = [], rest = [];
     for (const m of moves) {
@@ -239,13 +268,22 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
         }
         (isTake ? takes : rest).push(m);
     }
+    // MACRO at the root too: same canonical-entry filtering.
+    let restRoot = rest;
+    {
+        const u = unitSkipSet(b, hBits, vBits, sides, moves, MACRO_MIN_UNIT);
+        if (u.skip.size > 0) {
+            stats.macroSkips += u.skip.size;
+            restRoot = rest.filter(m => !u.skip.has(m));
+        }
+    }
     // One table for the whole solve: root moves transpose into each
     // other's subtrees constantly (chain links played in different
     // orders reach the same positions), and bound-typed entries are
     // sound regardless of which root move produced them.
     const tt = new Map();
     let bestMove = moves[0], bestVal = -Infinity, completed = 0;
-    for (const m of takes.concat(rest)) {
+    for (const m of takes.concat(restRoot)) {
         const s = withLine(b, hBits, vBits, m);
         const childSides = sides.slice();
         let childLow = low, closed = 0;
