@@ -154,6 +154,33 @@ import Player from "./Player.js";
            preset move can close a box -- all 8 moves are toggles,
            the turn lands on player 1 (the AI), and move() triggers
            checkAImove. Any order works.
+        17) Engine PASS / solver PASS: the decomposed counterexample
+           to "start by taking the open chain." 5x4, fully
+           decomposed (U=15, 3 components), AI (player 1) to move.
+           Components: a fresh 10-chain across the top two rows, a
+           4-loop with both ends offered (the arc (0,2),(1,2),
+           (1,3),(0,3) -- extractor loop with threes=2, micro
+           {4,1,1}), and a single offered box at (4,3); the other
+           five boxes are claimed separators. The 4-loop is open at
+           both ends, which makes it look ripe to sweep, but every
+           first move inside it is worth +5, while taking the
+           single box with h,4,4 is the unique optimal at +7 -- a
+           2-box gap, verified against the exact solver (opening
+           the 10-chain is -15). This is the board form of the one
+           exception found by the 2026-11-06 sweep-claim test (an
+           optimal move inside an open chain of length >= 3 failed
+           only for the doubly-open 4-chain, 1 of 7 instances, same
+           -2 margin and same companion shape: fresh 10-chain +
+           single; the abstract instance's 7-ring cannot occur on
+           a board, since grid loops are even). It is also why the
+           evaluator's open-chain restriction (PR #80) refuses to
+           treat {4,1,1} as sweepable. The unified engine passes
+           via its exact evaluator branch (decomposed, in caps);
+           a pattern player that starts the open chain loses 2.
+           ORDER: five separator boxes close along the way; the
+           shared edge v,2,3 is drawn 33rd and closes (2,2) and
+           (3,2) together, making 4 closing draws in total, so the
+           34 preset moves land the turn on player 1 (the AI).
         */
 
 
@@ -163,7 +190,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"16") must stay in sync with those <option> values.
+ * values here ("0"-"17") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -958,5 +985,69 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,1,1");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("v,2,0");
+        }
+
+        if(testCase == 17) {
+            // Decomposed counterexample: take the single, not the
+            // open 4-loop. 4 rows x 5 cols, AI (player 1) to move.
+            // Components (see the header comment): fresh 10-chain
+            // on the top two rows, doubly-open 4-loop at the
+            // bottom left, single offered box at (4,3), five
+            // claimed separator boxes. Optimal: h,4,4 (+7, unique);
+            // best move inside the 4-loop is +5; opening the
+            // 10-chain is -15. Ordering: v,2,3 is drawn 33rd and
+            // closes (2,2) and (3,2) together (4 closing draws in
+            // total), so the turn lands on player 1.
+            height = 4;
+            width = 5;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,1");
+            game.move("h,0,2");
+            game.move("h,0,4");
+            game.move("h,1,0");
+            game.move("h,1,1");
+            game.move("h,1,2");
+            game.move("h,1,4");
+            game.move("h,2,0");
+            game.move("h,2,1");
+            game.move("h,2,2");
+            game.move("h,2,3");
+            game.move("h,2,4");
+            game.move("h,3,0");
+            game.move("h,3,1");
+            game.move("h,3,2");
+            game.move("h,3,3");
+            game.move("h,3,4");
+            game.move("h,4,0");
+            game.move("h,4,2");
+            game.move("h,4,3");
+            game.move("v,0,5");
+            game.move("v,1,5");
+            game.move("v,2,0");
+            game.move("v,2,1");
+            game.move("v,2,2");
+            game.move("v,2,4");
+            game.move("v,2,5");
+            game.move("v,3,0");
+            game.move("v,3,2");
+            game.move("v,3,3");
+            game.move("v,3,4");
+            game.move("v,3,5");
+            game.move("v,2,3");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,0,0");
         }
 }
