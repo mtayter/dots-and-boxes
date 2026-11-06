@@ -601,8 +601,22 @@ export default class AIEngine {
         this.lastPredSec = gate ? gate.predSec : null;
         if (gate && gate.predSec < GATE_ATTEMPT_MAX_SEC) {
             const t0 = Date.now();
+            // Heuristic-first root ordering: draw the heuristic's
+            // move and have the solver evaluate it first
+            // (opts.priorityMove), so a cap-aborted solve's salvage
+            // is never worse than the move the heuristic would have
+            // played — and any other root move completed before the
+            // cap can still beat it by exact value. (2026-11-05:
+            // under takes-first order, 4/58 recorded salvages were
+            // worse than every heuristic-pool move.)
+            const hDraw = this.heuristic.chooseMove(h, v);
+            const hStr = hDraw[0] + ',' + hDraw[1] + ',' + hDraw[2];
+            let priorityMove = null;
+            for (const m of moves) {
+                if (lineToString(b, m) === hStr) { priorityMove = m; break; }
+            }
             try {
-                const res = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_SOLVE_CAP_MS);
+                const res = solveRootCutoff(b, hBits, vBits, moves, Date.now() + GATE_SOLVE_CAP_MS, { priorityMove });
                 this.lastSolveMs = Date.now() - t0;
                 // res.aborted: the cap fired but at least one root
                 // move was fully scored — play the best of those

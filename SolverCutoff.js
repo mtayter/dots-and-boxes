@@ -282,8 +282,11 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
     // orders reach the same positions), and bound-typed entries are
     // sound regardless of which root move produced them.
     const tt = new Map();
-    let bestMove = moves[0], bestVal = -Infinity, completed = 0;
-    for (const m of takes.concat(restRoot)) {
+    // Score one root move exactly (shared by the floor probe and
+    // the main loop): apply the line, thread the child's side
+    // counts, and recurse with the turn kept (boxes closed) or
+    // flipped. Throws SolverAbort when the deadline fires.
+    const scoreRootMove = (m) => {
         const s = withLine(b, hBits, vBits, m);
         const childSides = sides.slice();
         let childLow = low, closed = 0;
@@ -293,16 +296,49 @@ function solveRootCutoff(b, hBits, vBits, moves, deadline = Date.now() + 2000, o
             if (old === 1) childLow--;
             if (old + 1 === 4) closed++;
         }
+        return closed > 0
+            ? closed + solveRecCutoff(b, s.hBits, s.vBits, 1, -Infinity, Infinity,
+                tt, deadline, counter, childSides, childLow, stats, o)
+            : -solveRecCutoff(b, s.hBits, s.vBits, 0, -Infinity, Infinity,
+                tt, deadline, counter, childSides, childLow, stats, o);
+    };
+    // PRIORITY FLOOR (opts.priorityMove, a line id): score the
+    // caller's fallback move first and hold it aside. It takes no
+    // part in the standard loop below — the loop re-scores it in
+    // its normal position (a shared-TT hit), so a completed
+    // solve returns exactly what the no-priority engine returns,
+    // tie-breaks included. On an abort, the salvage is the
+    // better of the loop's best completed move and this floor,
+    // so a salvage can never be worse than the fallback move the
+    // caller would have played; if the probe itself aborts, the
+    // floor stays unset and the loop behaves as the old engine.
+    // AIEngine passes the heuristic's drawn move. Motivation
+    // (2026-11-05): under takes-first order alone, 4 of 58
+    // recorded cap salvages were worse than EVERY move in the
+    // heuristic's pool, by up to 60 boxes — the one good move
+    // sat late in line-id order and was never scored in time.
+    let floorMove = null, floorVal = -Infinity;
+    if (o.priorityMove != null && moves.includes(o.priorityMove)) {
+        try {
+            floorVal = scoreRootMove(o.priorityMove);
+            floorMove = o.priorityMove;
+        } catch (e) {
+            if (!(e instanceof SolverAbort)) throw e;
+        }
+    }
+    let bestMove = moves[0], bestVal = -Infinity, completed = 0;
+    for (const m of takes.concat(restRoot)) {
         let val;
         try {
-            val = closed > 0
-                ? closed + solveRecCutoff(b, s.hBits, s.vBits, 1, -Infinity, Infinity,
-                    tt, deadline, counter, childSides, childLow, stats, o)
-                : -solveRecCutoff(b, s.hBits, s.vBits, 0, -Infinity, Infinity,
-                    tt, deadline, counter, childSides, childLow, stats, o);
+            val = scoreRootMove(m);
         } catch (e) {
-            if (e instanceof SolverAbort && completed > 0) {
-                return { move: bestMove, value: bestVal, nodes: counter.n, stats, aborted: true };
+            if (e instanceof SolverAbort) {
+                if (floorMove !== null && (completed === 0 || floorVal > bestVal)) {
+                    return { move: floorMove, value: floorVal, nodes: counter.n, stats, aborted: true };
+                }
+                if (completed > 0) {
+                    return { move: bestMove, value: bestVal, nodes: counter.n, stats, aborted: true };
+                }
             }
             throw e;
         }
