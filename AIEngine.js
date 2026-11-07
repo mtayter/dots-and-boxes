@@ -1,196 +1,92 @@
 // AIEngine.js
 //
-// AIEngine: fixed-strength 4-phase Dots and Boxes AI (the engine always
-// uses the single configuration below). Design (agreed with Mike,
-// 2026-10-23): commit-or-skip minimax,
-// crisp either/or phases, no blending. Each move is decided by exactly one
-// stage, checked in this order (cascade, component (d) 2026-10-26):
+// AIEngine: the two-level Dots and Boxes AI. Each move is decided by
+// exactly one step of a three-step cascade, checked in order:
 //
 //   Step 1 (allcock):   fully decomposed AND every component in the
 //                       Allcock domain (rings >= 4, fresh chains
 //                       >= 3) -> ControlValue.allcockMove (exact
 //                       play from the control recursion; no size
-//                       gate — the recursion is the cheap part).
-//                       Decomposed positions outside the domain
-//                       fall through to minimax (advanced) or the
-//                       heuristic. (Refactor 2026-11-06: this step
-//                       replaced the old gated evaluator branch;
-//                       the general exact evaluator now serves
-//                       only inside minimax's decomposition
-//                       cutoff and the heuristic's legacy path.)
-//   Step 2 (minimax):   minimax-with-cutoff (solveRootCutoff) under a
-//                       flat 5s wall-clock budget, attempted on every
-//                       position the GateModel equation does not screen
-//                       out as hopeless (predicted solve < 1000s,
-//                       laptop scale — see GATE CONFIGURATION below);
-//                       on a budget abort the best fully-scored root
-//                       move is salvaged when one exists, else the
-//                       move falls through to the heuristic. Beginner
-//                       level skips this step entirely.
-//   Step 3 (heuristic): everything else -> AIEngineHeuristic play, via
-//                       the old phases below. MCTS-with-cutoff is NOT a
-//                       step (component (c) verdict NO).
-//   Phase 3 (offer):    one or more offered components (regions of
-//                       2-3-sided boxes containing a 3-sided box) ->
-//                       AIEngineHeuristic play. MCTS never plays offered
-//                       positions.
-//   Phase 1 (quiet):    no offers and E > 0 -> heuristic move (in the
-//                       pre-structure opening its play is a random
-//                       safe move anyway; MCTS has no signal to find
-//                       there). Phase 2's boundary is 0, so quiet
-//                       positions always take this branch.
-//   Phase 2 (steering): no offers and E <= boundary (0) -> MCTS with
-//                       the fixed iteration budget, plain UCB selection
-//                       with Cp 1.41, and structure-gated rollouts
-//                       (dumb until any box reaches >= 2 sides, then the
-//                       heuristic finishes the rollout). Calibrated OFF
-//                       (boundary 0 everywhere); retained, unreachable.
+//                       gate). Both levels take this step.
+//   Step 2 (minimax):   minimax-with-cutoff (solveRootCutoff) under
+//                       a flat 5s wall-clock budget, attempted on
+//                       every position the GateModel equation does
+//                       not screen out as hopeless (see GATE
+//                       CONFIGURATION below); on a budget abort the
+//                       best fully-scored root move is salvaged
+//                       when one exists, else the move falls
+//                       through. ADVANCED ONLY — beginner skips
+//                       this step entirely.
+//   Step 3 (heuristic): AIEngineHeuristic play (chooseFallbackMove):
+//                       offered positions go to the controller /
+//                       greedy logic ('heuristic-offer'), quiet
+//                       positions to the opener ('heuristic-quiet').
 //
-// The boundary is capability-calibrated (Stage B): the empty-line count at
-// and below which MCTS at the fixed budget demonstrably out-decides the
-// heuristic. It is board-size-dependent; it is 0 on every size (MCTS
-// never earns its seat in the quiet phase).
-//
-// Phase-2 budget is TIME-derived (Mike's decision, 2026-10-23): a
-// consistent per-move thinking time on every board size. Phone time
-// target 3.0s (VM budget 1500ms; phone = 2x VM). Iterations per size =
-// 1500 / measured gated ms-per-iteration, measured with this file's
-// runMCTS on quiet ~50%-fill positions, warmed and interleaved
-// (harness/measure-iter.mjs): 5x5 0.396 ms/iter (median, n=12),
-// 7x7 1.050 (n=12), 10x10 4.136 (n=6). Resulting budgets:
-// 3788 (5x5) / 1429 (7x7) / 363 (10x10). The measured per-size rates
-// ARE the scaling rule.
-//
-// Calibration provenance: Stage A (solver cost vs empties -> minimaxLines,
-// phone time = 2x VM time, worst-case rule) and Stage B (quiet-position
-// crossover -> boundary; Cp side-experiment). Logs:
-// ~/workspace/goals/mcts-engine-improvements/hidden_files/
+// History: the cascade grew by accretion (a gated evaluator step,
+// MCTS phases, a legacy exact solver) and was refactored to this
+// shape 2026-11-06 (PR #87); the MCTS code and the heuristic's
+// legacy chooseMove were removed the same day at Mike's direction.
+// solveRoot below is retained as the reference exact solver.
 
-import AIEngineHeuristic, { EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS } from "./AIEngineHeuristic.js";
+import AIEngineHeuristic from "./AIEngineHeuristic.js";
 import { solveRootCutoff, SolverAbort as CutoffAbort } from "./SolverCutoff.js";
 import { gatePrediction } from "./GateModel.js";
 import { computeSides, allcockMove } from "./ControlValue.js";
 import { buildBoard, fromMatrices, emptyLines, lineToString, boxesClosedBy } from "./Board.js";
-// NOTE (2026-10-26, component (b) integration): phase 4 now solves via
-// SolverCutoff's decomposition-cutoff solver instead of the plain expansion
-// solver below. Import chain AIEngine -> SolverCutoff -> Hybrid/ControlValue
-// has no cycle (nothing imports AIEngine). solveRoot stays exported
-// (fixed) for harness/reference use.
+// NOTE: step 2 solves via SolverCutoff's decomposition-cutoff
+// solver, not the plain expansion solver below (solveRoot is the
+// retained reference implementation). Import chain AIEngine ->
+// SolverCutoff -> ControlValue has no cycle.
 
-// ---- FIXED CONFIGURATION: filled from Stage A/B calibration (see header) ----
-// Phone time target 3000ms; iterations derive from the VM budget via
-// MS_PER_ITER_ANCHORS below.
-// minimaxLines — RECALIBRATED 2026-10-26 (component (b) integration,
-// supersedes the Stage A 2026-10-23 row). Fixed solver + decomposition
-// cutoff, worst-case rule (largest E with all E' <= E having MAX VM solve
-// time x2 <= phoneMs), mixed heur+randquiet sample, 5x5, 30 positions per
-// E at E14-22 (15 at E25-30), measured under 2-4-way VM contention (so
-// contended VM times overstate solo times and the phone=2x rule applied
-// to them is conservative). Binding maxima: E14 346.7ms VM = 693ms phone;
-// E15 653.4ms = 1306ms phone (within 3000ms); E16 3583.3ms = 7166ms
-// phone (busts). Hence the scalar 15 — down from the earlier 16/18
-// because the mixed sample's
-// pathological randquiet positions, not the medians (E16 median 38ms),
-// bust the targets. Heur-only maxima would give 19, but
-// real games vs human opponents include non-heur positions, so the mixed
-// rule governs. CAVEAT: these are scalar 5x5 thresholds and do NOT
-// satisfy phone targets on larger boards (7x7 E14 max 2701ms VM = 5.4s
-// phone; 10x10 E14 max 2110ms VM = 4.2s phone — both bust the 3000ms
-// target). Per-size minimaxLines follow below (component (d)).
-// boundary (Stage B crossover): 0 on every size — at the
-//   time-derived budgets, gated MCTS never out-decided the heuristic
-//   pick on >= 60% of quiet positions at any empties level (n=6/bucket
-//   on 5x5/7x7, n=3 on 10x10), so phase 2 is calibrated OFF. If budgets
-//   or rollouts change materially, re-run Stage B before enabling it.
-// cp (Stage B side-experiment, n=14 paired): 1.41 — Cp 0.5
-//   point estimates were better at both budget classes but within
-//   ~1 sigma (noise), so the textbook default stands.
-// Fixed configuration: phone time target
-// 3000ms, VM budget half that, minimax deadline 80% of VM.
-const VM_BUDGET_MS = 1500;
-const MINIMAX_DEADLINE_MS = Math.round(VM_BUDGET_MS * 0.8); // 1200
-const CP = 1.41;
-const BOUNDARY = 0;
+// ---- FIXED CONFIGURATION ----
+// minimaxLinesFor: retained for the E==1 phase label and harness
+// compatibility (the step-2 admission itself is the GateModel
+// screen below, not a line count). Per-size values calibrated
+// 2026-10-26 on non-decomposed roots under the worst-case rule.
 const MINIMAX_LINES = 15;
 const MINIMAX_LINES_BY_SIZE = { 7: 12, 10: 12 };
-// Per-size minimaxLines (component (d), 2026-10-26): the scalar row above
-// is 5x5-calibrated and BUSTS big-board budgets (7x7 E14 max 2701ms VM,
-// 10x10 E14 max 2110ms VM — both over the 1500ms VM budget). Big-board
-// lines use the same worst-case rule on NON-decomposed roots (decomposed
-// roots never reach phase 4 — step 1 catches them): harness
-// cascade-minimax-nondec.jsonl, solo-ish VM, n=6 per cell:
-//   7x7:  E10 max 83.6, E12 max 236.0, E14 max 1519.5
-//   10x10: E10 max 89.4, E12 max 355.3, E14 max 1921.5
-// Largest measured E with max <= 1500ms VM budget: 12 (E14 busts).
-// 5x5 keeps the (b) scalar row. Non-square boards fall back to the
-// scalar row. The phase-4 deadline is the backstop for contention
-// overshoot, so a line choice here controls waste, not compliance:
-// with the deadline, no phase-4 call can exceed the VM budget +
-// fallback cost.
 function minimaxLinesFor(W, H) {
     if (W === H && MINIMAX_LINES_BY_SIZE[W] !== undefined) {
         return MINIMAX_LINES_BY_SIZE[W];
     }
     return MINIMAX_LINES;
 }
-// GATE CONFIGURATION (2026-11-04; reshaped 2026-11-05): the GateModel
-// "Full" equation (refit against the shared-TT solver, PR #64) no
-// longer admits step 2 on a fine threshold — its multiplicative
-// error (~1.4x median, far worse extrapolated) made the old 5s line
-// close to arbitrary. It now serves only as a hopelessness screen:
-// positions predicted at GATE_ATTEMPT_MAX_SEC or more are skipped
-// (the heuristic plays instantly); everything below is attempted
-// under a flat GATE_SOLVE_CAP_MS wall-clock budget on whatever
-// device is running it, and on SolverAbort the search salvages its
-// best fully-scored root move when it has one, otherwise falls
-// through to the heuristic below. The 1000s screen and 5s budget
-// come from the 2026-11-05 cliff probe (184 step-2 positions: 147
-// self-play snapshots 5x5-10x10 plus scatter rows, one timed 5s
-// laptop attempt each): attempts returned an exact or salvaged
-// move for 88% of positions predicted < 5s, about 2/3 in the
-// 300-1000s band, only ~1/3 in 1000-1e6, and 0 of 86 predicted
-// >= 1e6 — the marginal value per wasted attempt collapses above
-// 1000s. (History: admission at pred < 5s shipped 2026-11-04 with no
-// solve cap for Mike's phone retest; a realistic 4x4 position
-// predicted < 5s then solved 36+ min uncapped on the VM, so a 10s
-// cap was restored 2026-11-05 before the hybrid replaced both.)
+// GATE CONFIGURATION (2026-11-05; equation refit 2026-11-06):
+// the GateModel "Full" equation does not admit step 2 on a fine
+// threshold — its multiplicative error (~1.3x median, far worse
+// extrapolated) makes any fine line close to arbitrary. It serves
+// only as a hopelessness screen: positions predicted at
+// GATE_ATTEMPT_MAX_SEC or more are skipped (the heuristic plays
+// instantly); everything below is attempted under a flat
+// GATE_SOLVE_CAP_MS wall-clock budget on whatever device is
+// running it, and on SolverAbort the search salvages its best
+// fully-scored root move when it has one, otherwise falls through
+// to the heuristic below.
+// The equation was refit 2026-11-06 against the current solver
+// (192 D* positions re-timed; see GateModel.js). The 1000s screen
+// was RETAINED, now in refit-equation seconds, from the
+// 2026-11-06 cliff probe (144 step-2 positions under the
+// refactored cascade: 107 self-play snapshots + 37 scatter rows,
+// one production-faithful 5s laptop attempt each; 85 positions
+// yield a completed or salvaged move): with the refit equation,
+// cutoff 300s captures 79/85 yield for 6 wasted attempts, 1000s
+// captures 81/85 for the same 6 (+2/+0 — pure gain), and 10000s
+// captures 84/85 for 9 (+3/+3 — a wash at a higher burn rate), so
+// the marginal value per wasted attempt still collapses above
+// 1000s. Against the incumbent (old equation at 1000s: 73/85
+// captured, 5 wasted, 12 yieldable skipped), the refit at 1000s
+// buys +8 yieldable positions for +1 wasted attempt.
+// DEADLINE SOUNDNESS vs the cutoff's micro game: solveRootCutoff
+// checks the deadline between search nodes, but a single
+// componentGameValue call at a cutoff node is NOT deadline-
+// checked; since the PR #80 evaluator prunings the worst recorded
+// such call is ~0.2s, so a solve can overshoot the cap by at most
+// roughly that, once.
 // minimaxLinesFor is retained for the E==1 phase label and harness
 // compatibility.
 const GATE_ATTEMPT_MAX_SEC = 1000;
 const GATE_SOLVE_CAP_MS = 5000;
-// Phase-4 deadline: 80% of the VM budget, leaving 20% for the
-// fallback move + overhead (1200ms). On SolverAbort the move falls
-// through to phase 3 / phase 1 (lastMinimaxAborted records it); the
-// old 24-hour deadline (effectively no cap) is gone.
-// DEADLINE SOUNDNESS vs the cutoff's micro game: solveRootCutoff checks
-// the deadline between search nodes, but a single componentGameValue call
-// at a cutoff node is NOT deadline-checked. That call is bounded here
-// because phase 4 only runs at E <= 15 (5x5) or E <= 12 (big boards), and
-// every position reachable from an E-line root has unclaimed U <= 2E <=
-// 30 — the evaluator-gate regime, where a single controlValue call
-// measured <= ~25ms warm (game rows) and branch totals (E child calls)
-// <= 94.8ms. So no single cutoff call can stall past the deadline by
-// more than ~0.1s, and phase-4 totals stay within budget + fallback.
 
-
-// Measured gated-rollout cost anchors: [totalLines, VM ms per iteration].
-const MS_PER_ITER_ANCHORS = [[60, 0.396], [112, 1.050], [220, 4.136]];
-function msPerIterFor(totalLines) {
-    const A = MS_PER_ITER_ANCHORS;
-    if (totalLines <= A[0][0]) return A[0][1] * totalLines / A[0][0];
-    for (let i = 1; i < A.length; i++) {
-        if (totalLines <= A[i][0]) {
-            const [l0, r0] = A[i - 1], [l1, r1] = A[i];
-            return r0 + (r1 - r0) * (totalLines - l0) / (l1 - l0);
-        }
-    }
-    return A[A.length - 1][1];
-}
-// Phase-2 iteration budget: VM budget / measured rate. (Phase 2 never
-// fires — BOUNDARY is 0 — but the budget is kept for reference.)
-function iterationsFor(totalLines) {
-    return Math.max(1, Math.round(VM_BUDGET_MS / msPerIterFor(totalLines)));
-}
 
 function popcount(b) {
     let c = 0;
@@ -301,211 +197,6 @@ function solveRoot(b, hBits, vBits, moves, deadline = Date.now() + 2000) {
     return bestMove;
 }
 
-// ---------------------------------------------------------------------------
-// Rollouts (from the archived AIEngineHybridStaged): dumb epsilon-greedy policy, and the
-// structure-gated rollout — dumb until any box reaches >= 2 sides, then the
-// heuristic (epsilon-greedy) finishes the game.
-// ---------------------------------------------------------------------------
-function pickRolloutIndex(b, empty, sides, epsilon) {
-    if (Math.random() < epsilon) return (Math.random() * empty.length) | 0;
-    let takeIdx = -1;
-    let safeIdx = -1, safeCount = 0;
-    for (let i = 0; i < empty.length; i++) {
-        let isTake = false, isSafe = true;
-        for (const bi of b.lineBoxes[empty[i]]) {
-            const s = sides[bi];
-            if (s === 3) { isTake = true; break; }
-            if (s === 2) isSafe = false;
-        }
-        if (isTake) { takeIdx = i; break; }
-        if (isSafe) { safeCount++; if (Math.random() < 1 / safeCount) safeIdx = i; }
-    }
-    if (takeIdx !== -1) return takeIdx;
-    if (safeIdx !== -1) return safeIdx;
-    return (Math.random() * empty.length) | 0;
-}
-
-function toMatrices(b, hBits, vBits) {
-    const h = [], v = [];
-    for (let i = 0; i < b.W; i++) {
-        h[i] = [];
-        for (let j = 0; j <= b.H; j++) {
-            h[i][j] = Number((hBits >> BigInt(i * (b.H + 1) + j)) & 1n);
-        }
-    }
-    for (let i = 0; i < b.H; i++) {
-        v[i] = [];
-        for (let j = 0; j <= b.W; j++) {
-            v[i][j] = Number((vBits >> BigInt(i * (b.W + 1) + j)) & 1n);
-        }
-    }
-    return { h, v };
-}
-
-// Heuristic rollout on matrices; returns boxes closed by the player whose
-// frame label is 1 (cur === 1), starting from aiBoxesInit.
-function rolloutHeuristic(b, hBits, vBits, turn, heuristic, epsilon, aiBoxesInit = 0) {
-    const { h, v } = toMatrices(b, hBits, vBits);
-    const W = b.W, H = b.H;
-    const squares = [];
-    for (let i = 0; i < H; i++) {
-        squares[i] = [];
-        for (let j = 0; j < W; j++) {
-            squares[i][j] = (h[j][i] ? 1 : 0) + (h[j][i + 1] ? 1 : 0) +
-                            (v[i][j] ? 1 : 0) + (v[i][j + 1] ? 1 : 0);
-        }
-    }
-    let aiBoxes = aiBoxesInit, cur = turn;
-    let movesLeft = 0;
-    for (let i = 0; i < W; i++) for (let j = 0; j <= H; j++) if (!h[i][j]) movesLeft++;
-    for (let i = 0; i < H; i++) for (let j = 0; j <= W; j++) if (!v[i][j]) movesLeft++;
-    while (movesLeft > 0) {
-        let m;
-        if (Math.random() < epsilon) {
-            let idx = (Math.random() * movesLeft) | 0;
-            for (let i = 0; i < W && idx >= 0; i++) {
-                for (let j = 0; j <= H; j++) {
-                    if (!h[i][j]) {
-                        if (idx-- === 0) { m = ["h", i, j]; break; }
-                    }
-                }
-                if (m) break;
-            }
-            if (!m) {
-                for (let i = 0; i < H && idx >= 0; i++) {
-                    for (let j = 0; j <= W; j++) {
-                        if (!v[i][j]) {
-                            if (idx-- === 0) { m = ["v", i, j]; break; }
-                        }
-                    }
-                    if (m) break;
-                }
-            }
-        } else {
-            m = heuristic.chooseMove(h, v);
-        }
-        const [type, a, c] = m;
-        let closed = 0;
-        if (type === "h") {
-            h[a][c] = 1;
-            movesLeft--;
-            if (c - 1 >= 0 && ++squares[c - 1][a] === 4) closed++;
-            if (c < H && ++squares[c][a] === 4) closed++;
-        } else {
-            v[a][c] = 1;
-            movesLeft--;
-            if (c - 1 >= 0 && ++squares[a][c - 1] === 4) closed++;
-            if (c < W && ++squares[a][c] === 4) closed++;
-        }
-        if (cur === 1) aiBoxes += closed;
-        if (closed === 0) cur = 1 - cur;
-    }
-    return aiBoxes;
-}
-
-// Structure-gated rollout: dumb policy until any box has >= 2 sides, then
-// one conversion to matrices and the heuristic finishes. Returns boxes
-// closed by the root mover (turn frame: 1 = root mover).
-function rolloutStaged(b, hBits, vBits, turn, epsilon, heuristic) {
-    const sides = new Uint8Array(b.boxes.length);
-    let structured = false;
-    for (let bi = 0; bi < sides.length; bi++) {
-        sides[bi] = boxSides(b, b.boxes[bi], hBits, vBits);
-        if (sides[bi] >= 2) structured = true;
-    }
-    const empty = emptyLines(b, hBits, vBits);
-    let aiBoxes = 0, cur = turn;
-    while (empty.length > 0) {
-        if (structured) {
-            return rolloutHeuristic(b, hBits, vBits, cur, heuristic, epsilon, aiBoxes);
-        }
-        const idx = pickRolloutIndex(b, empty, sides, epsilon);
-        const lineId = empty[idx];
-        empty[idx] = empty[empty.length - 1];
-        empty.pop();
-        if (lineId < b.nH) hBits |= 1n << BigInt(lineId);
-        else vBits |= 1n << BigInt(lineId - b.nH);
-        let closed = 0;
-        for (const bi of b.lineBoxes[lineId]) {
-            if (++sides[bi] === 4) closed++;
-            if (sides[bi] >= 2) structured = true;
-        }
-        if (cur === 1) aiBoxes += closed;
-        if (closed === 0) cur = 1 - cur;
-    }
-    return aiBoxes;
-}
-
-// ---------------------------------------------------------------------------
-// MCTS: plain UCB selection with a parameterized exploration constant,
-// iteration budget (no time budget — fixed strength on any device),
-// gated rollouts. Cp = sqrt(2) reproduces classic UCB1:
-//   val = mean + Cp * sqrt(ln(parent visits) / child visits)
-// ---------------------------------------------------------------------------
-class MNode {
-    constructor(b, hBits, vBits, turn, parent, move, aiSquares) {
-        this.hBits = hBits;
-        this.vBits = vBits;
-        this.turn = turn;
-        this.parent = parent;
-        this.move = move;
-        this.aiSquares = aiSquares;
-        this.children = [];
-        this.visits = 0;
-        this.value = 0;
-        this.untried = emptyLines(b, hBits, vBits);
-    }
-}
-
-function selectChild(node, cp) {
-    const logN = Math.log(node.visits);
-    let best = null, bestVal = -Infinity;
-    for (const c of node.children) {
-        let val;
-        if (c.visits === 0) {
-            val = Infinity;
-        } else {
-            let expl = c.value / c.visits;
-            if (node.turn === 0) expl = 1 - expl;
-            val = expl + cp * Math.sqrt(logN / c.visits);
-        }
-        if (val > bestVal) { bestVal = val; best = c; }
-    }
-    return best;
-}
-
-// Run MCTS from the position and return the chosen lineId. The root mover
-// is frame player 1. Shared by the engine and the calibration harness so
-// what is calibrated is exactly what ships.
-function runMCTS(b, hBits, vBits, squaresLeft, { iterations, cp, epsilon, heuristic }) {
-    const root = new MNode(b, hBits, vBits, 1, null, null, 0);
-    let iters = 0;
-    while (iters < iterations) {
-        iters++;
-        let node = root;
-        while (node.untried.length === 0 && node.children.length > 0) {
-            node = selectChild(node, cp);
-        }
-        if (node.untried.length > 0) {
-            const pick = (Math.random() * node.untried.length) | 0;
-            const lineId = node.untried.splice(pick, 1)[0];
-            const s = withLine(b, node.hBits, node.vBits, lineId);
-            const closed = boxesClosedBy(b, s.hBits, s.vBits, lineId);
-            const childTurn = closed === 0 ? 1 - node.turn : node.turn;
-            const childAi = node.aiSquares + (node.turn === 1 ? closed : 0);
-            const child = new MNode(b, s.hBits, s.vBits, childTurn, node, lineId, childAi);
-            node.children.push(child);
-            node = child;
-        }
-        const gained = rolloutStaged(b, node.hBits, node.vBits, node.turn, epsilon, heuristic);
-        const reward = (node.aiSquares + gained) / squaresLeft;
-        let n = node;
-        while (n) { n.visits++; n.value += reward; n = n.parent; }
-    }
-    const best = root.children.reduce((a, c) => (c.visits > a.visits ? c : a));
-    return { move: best.move, iterations: iters };
-}
-
 // Offered components under the heuristic's own region definition:
 // regions (connected 2-3-sided boxes) that contain a 3-sided box.
 // Sets up the heuristic's internals for `h`/`v` as a side effect.
@@ -526,12 +217,10 @@ function countOfferedRegions(heuristic, h, v) {
 export default class AIEngine {
     constructor(options = {}) {
         this.level = options.level ?? 'advanced'; // 'beginner' disables step 2 (minimax) below
-        this.epsilon = options.epsilon ?? 0.15;
         this.heuristic = new AIEngineHeuristic();
-        this.lastIterations = 0;
         this.lastExact = false;
-        this.lastPhase = null;   // 'allcock' | 'minimax' | 'heuristic-offer' | 'heuristic-quiet' | 'mcts'
-        this.lastMinimaxAborted = false; // true when phase 4 timed out and the move fell through
+        this.lastPhase = null;   // 'allcock' | 'minimax' | 'heuristic-offer' | 'heuristic-quiet'
+        this.lastMinimaxAborted = false; // true when step 2 aborted and the move fell through (or was salvaged)
         this.lastPredSec = null;  // GateModel prediction (laptop-scale seconds) when step 2 evaluated the gate, else null
         this.lastSolveMs = null;  // wall time of the step-2 solve attempt (success or abort), else null
     }
@@ -542,16 +231,12 @@ export default class AIEngine {
         const { hBits, vBits } = fromMatrices(b, h, v);
         const moves = emptyLines(b, hBits, vBits);
         const E = moves.length;
-        this.lastIterations = 0;
         this.lastExact = false;
         this.lastMinimaxAborted = false;
         this.lastPredSec = null;
         this.lastSolveMs = null;
 
-        // CASCADE (component (d), 2026-10-26), checked in order at every
-        // move. MCTS-with-cutoff is NOT in this cascade (component (c)
-        // verdict NO — full loses to the heuristic, tree-only unconfirmed;
-        // Hybrid's mctsCutoff flag stays OFF and untouched).
+        // CASCADE, checked in order at every move.
         //
         // Step 1 — heuristicAllcock (2026-11-06 refactor): a fully
         // decomposed position whose components are ALL in the
@@ -645,24 +330,11 @@ export default class AIEngine {
             return m[0] + ',' + m[1] + ',' + m[2];
         }
 
-        // Phase 1: quiet and still above the capability boundary -> the
-        // heuristic's safe play; MCTS has no detectable signal here.
-        if (E > BOUNDARY) {
-            this.lastPhase = 'heuristic-quiet';
-            const m = this.heuristic.chooseFallbackMove(h, v);
-            return m[0] + ',' + m[1] + ',' + m[2];
-        }
-
-        // Phase 2 (steering window): MCTS with the fixed time-derived,
-        // size-scaled iteration budget.
-        const iterations = iterationsFor(b.L);
-        const { move, iterations: ran } = runMCTS(b, hBits, vBits, squaresLeft, {
-            iterations, cp: CP, epsilon: this.epsilon, heuristic: this.heuristic,
-        });
-        this.lastPhase = 'mcts';
-        this.lastIterations = ran;
-        return lineToString(b, move);
+        // Quiet position -> the heuristic's safe opener play.
+        this.lastPhase = 'heuristic-quiet';
+        const m = this.heuristic.chooseFallbackMove(h, v);
+        return m[0] + ',' + m[1] + ',' + m[2];
     }
 }
 
-export { iterationsFor, msPerIterFor, buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, runMCTS, countOfferedRegions, offeredRegions, minimaxLinesFor, EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS };
+export { buildBoard, fromMatrices, emptyLines, lineToString, solveRoot, countOfferedRegions, offeredRegions, minimaxLinesFor };

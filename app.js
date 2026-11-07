@@ -96,9 +96,21 @@ function init() {
     window.addEventListener('resize', handleResize)
     handleResize();
 
-    // The X in the test panel corner hides it (no code needed to close).
+    // The saved-games box is displayed only together with the test
+    // panel (Mike, 2026-11-06): both user-facing visibility controls
+    // (the X and the Konami toggle) drive the two boxes as a pair.
+    // (The review-load path in abandonCurrent above hides ONLY the
+    // test panel — the DotGame constructor reads its visibility to
+    // decide whether to apply a test case — while the games box
+    // stays up as the review's control surface.)
+    function setTestPanelVisible(visible) {
+        document.getElementById('testBox').classList.toggle('hidden', !visible);
+        document.getElementById('gamesBox').classList.toggle('hidden', !visible);
+    }
+
+    // The X in the test panel corner hides the pair.
     document.getElementById('testBoxClose').addEventListener('click', () => {
-        document.getElementById('testBox').classList.add('hidden');
+        setTestPanelVisible(false);
     });
 
     // Easter egg: the Konami code (up up down down left right left right B A)
@@ -113,7 +125,7 @@ function init() {
             konamiProgress++;
             if (konamiProgress === konamiSequence.length) {
                 konamiProgress = 0;
-                document.getElementById('testBox').classList.toggle('hidden');
+                setTestPanelVisible(document.getElementById('testBox').classList.contains('hidden'));
             }
         } else {
             konamiProgress = (key === konamiSequence[0]) ? 1 : 0;

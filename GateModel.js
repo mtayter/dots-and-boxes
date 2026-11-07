@@ -6,27 +6,32 @@
 // ~/workspace/goals/mcts-engine-improvements/hidden_files/harness/
 // dstar-{features,analyze6,analyze7,analyze8,eqdata}).
 //
-// Coefficients below are the REFIT of 2026-11-04 against the shared-TT
-// solver (PR #64), on the paired old/new timings of the same 192
-// positions (harness refit-new.mjs / tt-values.jsonl). The original
-// fit targeted the pre-shared-TT solver and overestimated its
-// successor's times by a median 3.19x; the speedup is not uniform
-// (it grows with D*), so a constant shift was tested and rejected
-// (median factor error 1.57x vs the refit's 1.40x).
+// Coefficients below are the REFIT of 2026-11-06 against the
+// CURRENT solver (post evaluator prunings PR #80, Allcock fast
+// path PR #84, cascade refactor PR #87), on the same 192 positions
+// re-timed uncapped on the laptop (harness retime-current.mjs /
+// cur-times.jsonl; n=92 — 2 positions aborted even at a 600s
+// guard and were excluded). The Full feature set wins again
+// (baseline 0.632 LOO R^2 / 2.24x median factor error; +n3+U
+// 0.836 / 1.75x; Full 0.924 / 1.31x), but the coefficients moved
+// materially — the solver's speedups were not uniform (the old
+// equation's median overestimate on the fit population was only
+// 1.26x, yet its factor error was 1.45x vs the refit's 1.31x,
+// and on the realistic step-2 cliff population the refit
+// dominates it at every cutoff; see AIEngine's GATE note).
 //
-//   log10(t_sec) = 0.396 + 0.243*E + 0.094*freeMoves + 0.208*D*
-//                + 0.110*freeTake + 0.169*takeRunBoxes - 1.129*sideVar
-//                - 0.206*U - 5.840*disjointFrac - 1.766*fracChildDec
+//   log10(t_sec) = -1.718 + 0.235*E + 0.020*freeMoves + 0.152*D*
+//                + 0.145*freeTake + 0.129*takeRunBoxes - 0.907*sideVar
+//                - 0.172*U - 2.944*disjointFrac - 2.007*fracChildDec
 //
-// Cross-validated R^2 0.924 (LOO and 10-fold), median factor error
-// 1.40x — the same feature set stays the best of the candidates
-// tested (baseline E+freeMoves+D* 0.735; +n3+U 0.829). Predicted
-// times are LAPTOP-scale seconds; other devices scale by their
-// speed factor. Fit support is E <= 22: predictions far outside it
-// (e.g. 10x10 positions at E 32-44) are extrapolations — measured to
-// overestimate 3-17x on regenerated samples of that class, but a
-// hard solve-time cap (currently OFF, see AIEngine) remains the
-// only real protection against an underestimated tail position.
+// Cross-validated R^2 0.924 (LOO) / 0.928 (10-fold), median factor
+// error 1.31x. Predicted times are LAPTOP-scale seconds; other
+// devices scale by their speed factor. Fit support is E <= 22:
+// predictions far outside it (e.g. 10x10 positions at E 32-44)
+// are extrapolations; production only uses the prediction as a
+// coarse hopelessness screen under a hard 5s solve cap (see
+// AIEngine), which is the real protection against an
+// underestimated tail position.
 //
 // Feature definitions (identical to the offline extraction):
 //   E             empty lines
@@ -229,9 +234,9 @@ export function gatePrediction(b, hBits, vBits, sides, moves) {
         fracChildDec = dec / E;
     }
 
-    const log10Sec = 0.396 + 0.243 * E + 0.094 * freeMoves + 0.208 * dstar
-        + 0.110 * freeTake + 0.169 * takeRunBoxes - 1.129 * sideVar
-        - 0.206 * U - 5.840 * disjointFrac - 1.766 * fracChildDec;
+    const log10Sec = -1.718 + 0.235 * E + 0.020 * freeMoves + 0.152 * dstar
+        + 0.145 * freeTake + 0.129 * takeRunBoxes - 0.907 * sideVar
+        - 0.172 * U - 2.944 * disjointFrac - 2.007 * fracChildDec;
     return {
         predSec: 10 ** log10Sec,
         log10Sec,
