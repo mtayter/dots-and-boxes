@@ -2,9 +2,13 @@ import DotGame from './DotGame.js';
 import Player from './Player.js';
 
 // Saved-games review box (below the test panel). Loads
-// saved-games.json — recorded beginner-vs-advanced league games
-// with their full move lists — and lets the user load one onto
-// the main board and step through it move by move.
+// saved-games.json — recorded intermediate-vs-advanced league
+// games with their full move lists — and lets the user load one
+// onto the main board and step through it move by move. (The
+// data still calls the weaker side 'beginner': that was its
+// level name when the games were played, before the
+// pure-heuristic beginner existed and it was renamed
+// intermediate. Display text says Intermediate.)
 //
 // Stepping rebuilds the position from scratch on a fresh
 // human-vs-human DotGame (both seats human, so no engine ever
@@ -28,16 +32,16 @@ export default function initSavedGames({ ctx, scoreboard, abandonCurrent, adopt 
     const begScore = (rec) => (rec.beginnerSeat === 1 ? rec.p1 : rec.p2);
 
     function optionLabel(rec) {
-        const head = `#${rec.id} ${rec.w}x${rec.h} - Advanced ${advScore(rec)}, Beginner ${begScore(rec)}`;
-        if (rec.winner === 'beginner') return head + ' (beginner won)';
+        const head = `#${rec.id} ${rec.w}x${rec.h} - Advanced ${advScore(rec)}, Intermediate ${begScore(rec)}`;
+        if (rec.winner === 'beginner') return head + ' (intermediate won)';
         if (rec.winner === 'tie') return head + ' (tie)';
         return head;
     }
 
     function describe(rec) {
-        let text = `${rec.w}x${rec.h} game #${rec.id}: Beginner played Player ${rec.beginnerSeat}. ` +
-            `Final score: Advanced ${advScore(rec)} - Beginner ${begScore(rec)}` +
-            (rec.winner === 'beginner' ? ' - beginner won!' : rec.winner === 'tie' ? ' - a tie.' : '.');
+        let text = `${rec.w}x${rec.h} game #${rec.id}: Intermediate played Player ${rec.beginnerSeat}. ` +
+            `Final score: Advanced ${advScore(rec)} - Intermediate ${begScore(rec)}` +
+            (rec.winner === 'beginner' ? ' - intermediate won!' : rec.winner === 'tie' ? ' - a tie.' : '.');
         if (rec.blunder) {
             text += ` Advanced could have won: at move ${rec.blunder.moveNo} it played ` +
                 `${rec.blunder.played}, but ${rec.blunder.better} was the winning move.`;
@@ -55,8 +59,8 @@ export default function initSavedGames({ ctx, scoreboard, abandonCurrent, adopt 
     function logGameMoves(rec) {
         const advSeat = rec.beginnerSeat === 1 ? 2 : 1;
         console.log(`Saved game #${rec.id} (${rec.w}x${rec.h}): Advanced = Player ${advSeat}, ` +
-            `Beginner = Player ${rec.beginnerSeat}. Final score: Advanced ${advScore(rec)} - Beginner ${begScore(rec)}` +
-            (rec.winner === 'beginner' ? ' (beginner won)' : rec.winner === 'tie' ? ' (tie)' : '') + '. Moves:');
+            `Intermediate = Player ${rec.beginnerSeat}. Final score: Advanced ${advScore(rec)} - Intermediate ${begScore(rec)}` +
+            (rec.winner === 'beginner' ? ' (intermediate won)' : rec.winner === 'tie' ? ' (tie)' : '') + '. Moves:');
         const sources = Array.isArray(rec.moveSources) ? rec.moveSources : null;
         rec.moves.forEach((m, i) => {
             const s = sources && sources[i];

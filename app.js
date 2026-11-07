@@ -22,8 +22,9 @@ function init() {
                                     document.getElementById('player1Score'),
                                     document.getElementById('player2Score'));
     // The player-type dropdowns carry the AI level: 'ai-beginner'
-    // is the engine with minimax disabled, 'ai-advanced' the full
-    // engine. Player parses the value; nothing else needs it.
+    // is the pure heuristic, 'ai-intermediate' adds the Allcock
+    // step, 'ai-advanced' is the full engine. Player parses the
+    // value; nothing else needs it.
     heightRange.addEventListener('input', (e) => {
         heightValue.textContent = e.target.value;
     });
