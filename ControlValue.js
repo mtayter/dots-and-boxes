@@ -145,7 +145,7 @@ export function extractComponents(b, hBits, vBits, sides) {
                 if (e.nb < 0 || !rset.has(e.nb)) { loop = false; }
             }
         }
-        comps.push({ n: region.length, loop, threes });
+        comps.push({ n: region.length, loop, threes, boxes: region });
     }
     return comps;
 }
@@ -292,6 +292,49 @@ export function microGameValue(stateIn) {
     const state = stateIn.filter(c => c);
     if (allcockInDomain(state)) return allcockF(state);
     return microGameValueAB(state, -Infinity, Infinity);
+}
+
+// heuristicAllcock, as a board-level move (2026-11-06 refactor):
+// if the position is fully decomposed AND every component is in
+// the Allcock domain (rings >= 4, fresh chains {n,2,2} n >= 3),
+// return an optimal opening move (a board line id); otherwise
+// return null. The strategic choice is which component to open:
+// for each component, the sweeper's better reply is worth
+// min(control, take-all) against the rest, exactly as in
+// allcockF, and the opener picks the component maximizing it.
+// Inside the chosen component any first line is value-equal —
+// ring entries by symmetry, fresh-chain entries by the entry
+// equivalence the PR #80 collapse relies on — so the canonical
+// (lowest-id) untaken line of the chosen component is returned.
+// No size/component gate: the cost is the component scan plus
+// the memoized recursion over the component multiset.
+export function allcockMove(b, hBits, vBits, sides) {
+    const s = sides || computeSides(b, hBits, vBits);
+    if (!isDecomposed(s)) return null;
+    const comps = extractComponents(b, hBits, vBits, s);
+    if (comps.length === 0) return null;
+    const micro = comps.map(toMicro);
+    if (!allcockInDomain(micro)) return null;
+    let bestScore = -Infinity, bestIdx = -1;
+    for (let i = 0; i < micro.length; i++) {
+        const c = micro[i];
+        const size = c.ring || c.n;
+        const g = c.ring ? 4 : 2;
+        const rest = micro.slice(0, i).concat(micro.slice(i + 1));
+        const fv = allcockF(rest);
+        const score = Math.min(2 * g - size + fv, -size - fv);
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    const ex = boardExtras(b);
+    let bestLine = null;
+    for (const bi of comps[bestIdx].boxes) {
+        for (const e of ex.boxes[bi].edges) {
+            if (!lineTaken(b, hBits, vBits, e.line) && (bestLine === null || e.line < bestLine)) {
+                bestLine = e.line;
+            }
+        }
+    }
+    return bestLine;
 }
 
 // Alpha-beta over the micro game with a bound-typed transposition table

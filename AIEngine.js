@@ -6,12 +6,18 @@
 // crisp either/or phases, no blending. Each move is decided by exactly one
 // stage, checked in this order (cascade, component (d) 2026-10-26):
 //
-//   Step 1 (evaluator): fully decomposed AND unclaimed boxes U <= 30 ->
-//                       AIEngineHeuristic's evaluator branch (perfect
-//                       play). The U gate is what keeps this within
-//                       budget (see EVALUATOR_MAX_UNCLAIMED in
-//                       AIEngineHeuristic.js); gated-out decomposed
-//                       positions fall through.
+//   Step 1 (allcock):   fully decomposed AND every component in the
+//                       Allcock domain (rings >= 4, fresh chains
+//                       >= 3) -> ControlValue.allcockMove (exact
+//                       play from the control recursion; no size
+//                       gate — the recursion is the cheap part).
+//                       Decomposed positions outside the domain
+//                       fall through to minimax (advanced) or the
+//                       heuristic. (Refactor 2026-11-06: this step
+//                       replaced the old gated evaluator branch;
+//                       the general exact evaluator now serves
+//                       only inside minimax's decomposition
+//                       cutoff and the heuristic's legacy path.)
 //   Step 2 (minimax):   minimax-with-cutoff (solveRootCutoff) under a
 //                       flat 5s wall-clock budget, attempted on every
 //                       position the GateModel equation does not screen
@@ -63,7 +69,7 @@
 import AIEngineHeuristic, { EVALUATOR_MAX_UNCLAIMED, EVALUATOR_MAX_COMPONENTS } from "./AIEngineHeuristic.js";
 import { solveRootCutoff, SolverAbort as CutoffAbort } from "./SolverCutoff.js";
 import { gatePrediction } from "./GateModel.js";
-import { computeSides, isDecomposed, extractComponents } from "./ControlValue.js";
+import { computeSides, allcockMove } from "./ControlValue.js";
 import { buildBoard, fromMatrices, emptyLines, lineToString, boxesClosedBy } from "./Board.js";
 // NOTE (2026-10-26, component (b) integration): phase 4 now solves via
 // SolverCutoff's decomposition-cutoff solver instead of the plain expansion
@@ -524,7 +530,7 @@ export default class AIEngine {
         this.heuristic = new AIEngineHeuristic();
         this.lastIterations = 0;
         this.lastExact = false;
-        this.lastPhase = null;   // 'evaluator' | 'minimax' | 'heuristic-offer' | 'heuristic-quiet' | 'mcts'
+        this.lastPhase = null;   // 'allcock' | 'minimax' | 'heuristic-offer' | 'heuristic-quiet' | 'mcts'
         this.lastMinimaxAborted = false; // true when phase 4 timed out and the move fell through
         this.lastPredSec = null;  // GateModel prediction (laptop-scale seconds) when step 2 evaluated the gate, else null
         this.lastSolveMs = null;  // wall time of the step-2 solve attempt (success or abort), else null
@@ -547,34 +553,22 @@ export default class AIEngine {
         // verdict NO — full loses to the heuristic, tree-only unconfirmed;
         // Hybrid's mctsCutoff flag stays OFF and untouched).
         //
-        // Step 1 — DECOMPOSED -> evaluator move (perfect play). Explicit
-        // and first: decomposedness is computed here (not left implicit
-        // inside chooseMove), and gated by unclaimed-box count U <= 30
-        // AND component count <= 10 (same gate as the branch itself):
-        // above the gate the branch is skipped in chooseMove too, so
-        // falling through cannot re-enter an uncapped evaluation via
-        // step 3. The branch additionally carries a per-child deadline
-        // (the shared 1200ms default in AIEngineHeuristic), so even an
-        // in-gate multiset the structural gate underestimates abandons
-        // instead of stalling the move; on a branch timeout
-        // (heuristic.evaluatorTimedOut) the cascade falls through to
-        // step 2 rather than returning the fallback move as an
-        // 'evaluator' decision. Gated-out decomposed positions fall
-        // through to step 2 the same way.
+        // Step 1 — heuristicAllcock (2026-11-06 refactor): a fully
+        // decomposed position whose components are ALL in the
+        // Allcock domain (rings >= 4, fresh chains >= 3) has an
+        // exact optimal move from the control recursion alone —
+        // ControlValue.allcockMove picks the component to open and
+        // returns a canonical entry line. No size/component gate:
+        // the cost is the component scan plus the memoized
+        // recursion, so even positions the old evaluator step
+        // gated out (U > 30) are answered instantly. Both levels
+        // take this step; it is the only exact play beginner has.
         const sides = computeSides(b, hBits, vBits);
-        if (isDecomposed(sides)) {
-            const comps = extractComponents(b, hBits, vBits, sides);
-            let unclaimed = 0;
-            for (const c of comps) unclaimed += c.n;
-            if (unclaimed <= EVALUATOR_MAX_UNCLAIMED && comps.length <= EVALUATOR_MAX_COMPONENTS) {
-                const m = this.heuristic.chooseMove(h, v);
-                if (!this.heuristic.evaluatorTimedOut) {
-                    this.lastPhase = 'evaluator';
-                    return m[0] + ',' + m[1] + ',' + m[2];
-                }
-                // Branch timed out: fall through to step 2 (the
-                // controller/opener move just computed is discarded).
-            }
+        const acLine = allcockMove(b, hBits, vBits, sides);
+        if (acLine !== null) {
+            this.lastPhase = 'allcock';
+            this.lastExact = true;
+            return lineToString(b, acLine);
         }
 
         if (E === 1) {
@@ -609,7 +603,7 @@ export default class AIEngine {
             // cap can still beat it by exact value. (2026-11-05:
             // under takes-first order, 4/58 recorded salvages were
             // worse than every heuristic-pool move.)
-            const hDraw = this.heuristic.chooseMove(h, v);
+            const hDraw = this.heuristic.chooseFallbackMove(h, v);
             const hStr = hDraw[0] + ',' + hDraw[1] + ',' + hDraw[2];
             let priorityMove = null;
             for (const m of moves) {
@@ -636,9 +630,9 @@ export default class AIEngine {
             }
         }
 
-        // Step 3 — heuristic (phases 3 / 1 below). Decomposed positions
-        // reaching here are gated out of the evaluator branch, so
-        // chooseMove's controller/opener logic decides (bounded).
+        // Step 3 — heuristic fallback (phases 3 / 1 below): the
+        // heuristic proper (chooseFallbackMove — captures,
+        // controller/greedy, quiet opener; no evaluator branch).
         // Offer detection (Phase 3 vs quiet), using the heuristic's regions.
         const { offered } = offeredRegions(this.heuristic, h, v);
 
@@ -647,7 +641,7 @@ export default class AIEngine {
         // losing to plain heuristic play at every size, worst at 10x10.)
         if (offered.length >= 1) {
             this.lastPhase = 'heuristic-offer';
-            const m = this.heuristic.chooseMove(h, v);
+            const m = this.heuristic.chooseFallbackMove(h, v);
             return m[0] + ',' + m[1] + ',' + m[2];
         }
 
@@ -655,7 +649,7 @@ export default class AIEngine {
         // heuristic's safe play; MCTS has no detectable signal here.
         if (E > BOUNDARY) {
             this.lastPhase = 'heuristic-quiet';
-            const m = this.heuristic.chooseMove(h, v);
+            const m = this.heuristic.chooseFallbackMove(h, v);
             return m[0] + ',' + m[1] + ',' + m[2];
         }
 

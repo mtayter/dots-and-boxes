@@ -165,7 +165,15 @@ export default class AIEngineHeuristic {
                 // No legal moves: fall through to existing logic (as before).
             }
         }
-
+        return this.chooseFallbackMove(h, v);
+    }
+    // The heuristic fallback proper (the cascade's heuristic(board)):
+    // one-move captures on decomposed positions, controller/greedy
+    // play when boxes are offered, the quiet opener otherwise. No
+    // evaluator branch and no minimax in here — callers that want
+    // the exact decomposed play ask for it before falling back.
+    chooseFallbackMove(h, v) {
+        this.evaluatorTimedOut = false;
         this.h = h;
         this.v = v;
         this.x = this.h.length;
