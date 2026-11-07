@@ -47,6 +47,30 @@ export default function initSavedGames({ ctx, scoreboard, abandonCurrent, adopt 
         return text;
     }
 
+    // Dump the full move list, with how the AI chose each move,
+    // to the browser console when a game is loaded. Records saved
+    // with moveSources (a parallel array: {player, level, source,
+    // phase, ...}) print e.g. "87. v,8,7 - P1 advanced - minimax";
+    // older records without sources print the moves alone.
+    function logGameMoves(rec) {
+        const advSeat = rec.beginnerSeat === 1 ? 2 : 1;
+        console.log(`Saved game #${rec.id} (${rec.w}x${rec.h}): Advanced = Player ${advSeat}, ` +
+            `Beginner = Player ${rec.beginnerSeat}. Final score: Advanced ${advScore(rec)} - Beginner ${begScore(rec)}` +
+            (rec.winner === 'beginner' ? ' (beginner won)' : rec.winner === 'tie' ? ' (tie)' : '') + '. Moves:');
+        const sources = Array.isArray(rec.moveSources) ? rec.moveSources : null;
+        rec.moves.forEach((m, i) => {
+            const s = sources && sources[i];
+            if (s) {
+                let line = `${i + 1}. ${m} - P${s.player} ${s.level} - ${s.source}`;
+                if (s.phase && s.phase !== s.source) line += ` (${s.phase})`;
+                if (s.source === 'minimax' && s.minimaxAborted) line += ' [salvaged after the 5s cap]';
+                console.log(line);
+            } else {
+                console.log(`${i + 1}. ${m} - source not recorded`);
+            }
+        });
+    }
+
     function show(idx) {
         if (!current) return;
         const rec = current.rec;
@@ -72,6 +96,7 @@ export default function initSavedGames({ ctx, scoreboard, abandonCurrent, adopt 
         const rec = games[select.selectedIndex];
         if (!rec) return;
         current = { rec, idx: rec.moves.length };
+        logGameMoves(rec);
         show(current.idx);
     });
     prevBtn.addEventListener('click', () => { if (current) show(current.idx - 1); });
