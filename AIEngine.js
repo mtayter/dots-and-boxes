@@ -1,13 +1,15 @@
 // AIEngine.js
 //
-// AIEngine: the two-level Dots and Boxes AI. Each move is decided by
-// exactly one step of a three-step cascade, checked in order:
+// AIEngine: the three-level Dots and Boxes AI. Each move is
+// decided by exactly one step of a three-step cascade, checked
+// in order:
 //
 //   Step 1 (allcock):   fully decomposed AND every component in the
 //                       Allcock domain (rings >= 4, fresh chains
 //                       >= 3) -> ControlValue.allcockMove (exact
 //                       play from the control recursion; no size
-//                       gate). Both levels take this step.
+//                       gate). Intermediate and advanced take
+//                       this step; beginner skips it.
 //   Step 2 (minimax):   minimax-with-cutoff (solveRootCutoff) under
 //                       a flat 5s wall-clock budget, attempted on
 //                       every position the GateModel equation does
@@ -15,8 +17,8 @@
 //                       CONFIGURATION below); on a budget abort the
 //                       best fully-scored root move is salvaged
 //                       when one exists, else the move falls
-//                       through. ADVANCED ONLY — beginner skips
-//                       this step entirely.
+//                       through. ADVANCED ONLY — beginner and
+//                       intermediate skip this step entirely.
 //   Step 3 (heuristic): AIEngineHeuristic play (chooseFallbackMove):
 //                       offered positions go to the controller /
 //                       greedy logic ('heuristic-offer'), quiet
@@ -216,7 +218,7 @@ function countOfferedRegions(heuristic, h, v) {
 
 export default class AIEngine {
     constructor(options = {}) {
-        this.level = options.level ?? 'advanced'; // 'beginner' disables step 2 (minimax) below
+        this.level = options.level ?? 'advanced'; // 'beginner': step 3 only; 'intermediate': steps 1+3; 'advanced': all steps
         this.heuristic = new AIEngineHeuristic();
         this.lastExact = false;
         this.lastPhase = null;   // 'allcock' | 'minimax' | 'heuristic-offer' | 'heuristic-quiet'
@@ -246,20 +248,24 @@ export default class AIEngine {
         // returns a canonical entry line. No size/component gate:
         // the cost is the component scan plus the memoized
         // recursion, so even positions the old evaluator step
-        // gated out (U > 30) are answered instantly. Both levels
-        // take this step; it is the only exact play beginner has.
+        // gated out (U > 30) are answered instantly. Intermediate
+        // and advanced take this step (it is intermediate's only
+        // exact play); beginner skips it — beginner is the pure
+        // heuristic of step 3, with no exact play at all.
         const sides = computeSides(b, hBits, vBits);
-        const acLine = allcockMove(b, hBits, vBits, sides);
-        if (acLine !== null) {
-            this.lastPhase = 'allcock';
-            this.lastExact = true;
-            return lineToString(b, acLine);
+        if (this.level !== 'beginner') {
+            const acLine = allcockMove(b, hBits, vBits, sides);
+            if (acLine !== null) {
+                this.lastPhase = 'allcock';
+                this.lastExact = true;
+                return lineToString(b, acLine);
+            }
         }
 
         if (E === 1) {
-            // The only legal move — no search happens at either level;
+            // The only legal move — no search happens at any level;
             // the phase label just records how it would have been classed.
-            this.lastPhase = (this.level !== 'beginner' && E <= minimaxLinesFor(W, H)) ? 'minimax' : 'heuristic-quiet';
+            this.lastPhase = (this.level === 'advanced' && E <= minimaxLinesFor(W, H)) ? 'minimax' : 'heuristic-quiet';
             return lineToString(b, moves[0]);
         }
 
@@ -274,9 +280,10 @@ export default class AIEngine {
         // real bug, not a timeout); the cutoff's componentGameValue
         // calls are not deadline-checked, so a solve can overshoot
         // the cap by one component evaluation (bounded, ~0.1s).
-        // Beginner level: step 2 is skipped entirely — no gate
-        // evaluation, no search; play falls to the heuristic below.
-        const gate = this.level === 'beginner' ? null : gatePrediction(b, hBits, vBits, sides, moves);
+        // Beginner and intermediate levels: step 2 is skipped
+        // entirely — no gate evaluation, no search; play falls
+        // to the heuristic below.
+        const gate = this.level === 'advanced' ? gatePrediction(b, hBits, vBits, sides, moves) : null;
         this.lastPredSec = gate ? gate.predSec : null;
         if (gate && gate.predSec < GATE_ATTEMPT_MAX_SEC) {
             const t0 = Date.now();
