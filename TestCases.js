@@ -209,6 +209,30 @@ import Player from "./Player.js";
            moves are drawn in id order with h,0,0 last; the 8
            closing draws (one per separator box) land the turn on
            player 1 (the AI).
+        19) Intermediate PASS / beginner FAIL / solver PASS: the first
+           case that separates beginner from intermediate. 6x4, fully
+           decomposed (12 unclaimed boxes, E=14), AI (player 1) to
+           move, and every component in the Allcock domain: a fresh
+           4-ring at cols 0-1 rows 0-1, a fresh 3-chain across the
+           top row (cols 3-5), a fresh 5-chain across the bottom row
+           (cols 0-4); the other twelve boxes are claimed separators.
+           The position is worth 0. The Allcock recursion says open
+           the ring (any ring entry is worth 0); opening the 3-chain
+           is worth -2 and the 5-chain -4, all verified against the
+           exact evaluator. Beginner (the pure heuristic) has no safe
+           move here, so its opener opens the smallest area -- the
+           3-chain -- on every seed, and fails; intermediate opens
+           the ring via allcockMove and passes. Cases 1-18 never
+           present this decision: none of their positions is
+           Allcock-domain at the decision point, which is why
+           beginner and intermediate tie on the suite. Found
+           2026-11-10 by component-multiset search: chain-only
+           multisets never separate the levels (the smallest-chain
+           opener is always Allcock-optimal there); a ring companion
+           is required. ORDER: the 44 preset moves close exactly the
+           12 separator boxes, one per closing move with no double
+           closes, so the 32 turn-passes land the turn on player 1
+           (the AI).
         */
 
 
@@ -218,7 +242,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"18") must stay in sync with those <option> values.
+ * values here ("0"-"19") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -1136,5 +1160,80 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,2,5");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("h,0,0");
+        }
+        if(testCase == 19) {
+            // First beginner/intermediate separator (see the header
+            // comment): 6x4, fully decomposed, all components in the
+            // Allcock domain -- a fresh 4-ring (cols 0-1, rows 0-1),
+            // a fresh 3-chain (top row, cols 3-5), a fresh 5-chain
+            // (bottom row, cols 0-4), twelve claimed separators.
+            // Optimal: any entry into the ring (h,0,1 / h,1,1 /
+            // v,0,1 / v,1,1), worth 0. Beginner opens the 3-chain
+            // (-2) on every seed; intermediate opens the ring via
+            // allcockMove. The 44 preset moves close exactly the 12
+            // separator boxes, one per closing move (no double
+            // closes), so the 32 turn-passes land the turn on
+            // player 1 (the AI).
+            height = 4;
+            width = 6;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("v,1,6");
+            game.move("v,3,5");
+            game.move("v,2,6");
+            game.move("h,2,2");
+            game.move("v,2,5");
+            game.move("v,3,0");
+            game.move("h,3,3");
+            game.move("h,3,4");
+            game.move("v,1,2");
+            game.move("h,5,3");
+            game.move("h,5,1");
+            game.move("v,0,2");
+            game.move("h,2,4");
+            game.move("h,0,2");
+            game.move("h,2,0");
+            game.move("h,1,3");
+            game.move("v,2,3");
+            game.move("v,1,3");
+            game.move("v,2,2");
+            game.move("v,0,0");
+            game.move("h,5,2");
+            game.move("h,4,0");
+            game.move("h,2,3");
+            game.move("h,3,2");
+            game.move("h,0,0");
+            game.move("h,1,0");
+            game.move("v,1,5");
+            game.move("h,4,3");
+            game.move("v,0,6");
+            game.move("h,1,2");
+            game.move("v,3,6");
+            game.move("v,2,1");
+            game.move("v,2,0");
+            game.move("v,2,4");
+            game.move("h,0,3");
+            game.move("h,4,2");
+            game.move("h,2,1");
+            game.move("v,1,4");
+            game.move("h,4,1");
+            game.move("h,5,4");
+            game.move("v,1,0");
+            game.move("h,3,1");
+            game.move("v,0,3");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,1,4");
         }
 }
