@@ -233,6 +233,35 @@ import Player from "./Player.js";
            12 separator boxes, one per closing move with no double
            closes, so the 32 turn-passes land the turn on player 1
            (the AI).
+        20) All levels PASS the first move / solver PASS: the pure
+           opened-chain specimen. 6x4, fully decomposed (12
+           unclaimed boxes, E=13), AI (player 1) to move, and
+           exactly one component outside the Allcock domain: an
+           opened 4-chain {4,1,2} across the top row (cols 2-5,
+           its left end already opened). Its companions are both
+           in-domain: a fresh 4-chain {4,2,2} across the bottom
+           row (cols 0-3) and a fresh 4-ring (cols 0-1, rows 0-1);
+           the other twelve boxes are claimed separators. The
+           position is worth +4 and the unique optimal first move
+           is v,0,3, closing the opened end box (every other first
+           move is -4 or worse, verified against the exact
+           evaluator); all three levels play it. The teeth are
+           deferred: the heuristic (beginner -- and intermediate,
+           whose allcockMove declines out-of-domain positions)
+           sweeps two boxes and then double-crosses the last two
+           (h,5,0), donating them for nothing. The remaining
+           {4-chain, ring} pair is worth 0 to whoever opens it, so
+           the give-back buys no tempo and costs 4 on the
+           differential: in full play the heuristic nets 0 against
+           the exact +4. Found 2026-11-10 by component-multiset
+           search: with fresh companions, closing the offered end
+           box is never a suboptimal first move (no counterexample
+           with up to 3 companions / 30 boxes), so no first-move
+           separator exists for an opened long chain -- the
+           control error only becomes visible at the double-cross.
+           ORDER: the 45 preset moves close exactly the 12
+           separator boxes with exactly one double close, placed
+           last (h,4,2), landing the turn on player 1 (the AI).
         */
 
 
@@ -242,7 +271,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"19") must stay in sync with those <option> values.
+ * values here ("0"-"20") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -1235,5 +1264,82 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,0,3");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("h,1,4");
+        }
+        if(testCase == 20) {
+            // Pure opened-chain specimen (see the header comment):
+            // 6x4, fully decomposed, exactly one component outside
+            // the Allcock domain -- an opened 4-chain {4,1,2}
+            // (top row, cols 2-5, left end already opened); a fresh
+            // 4-chain (bottom row, cols 0-3) and a fresh 4-ring
+            // (cols 0-1, rows 0-1) are the in-domain companions;
+            // twelve claimed separators. Unique optimal first move:
+            // v,0,3 (+4); all levels play it, but the heuristic's
+            // deferred double-cross (h,5,0) donates the last two
+            // chain boxes and nets 0 in full play. The 45 preset
+            // moves close exactly the 12 separator boxes with
+            // exactly one double close, placed last (h,4,2),
+            // landing the turn on player 1 (the AI).
+            height = 4;
+            width = 6;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,5,2");
+            game.move("v,2,4");
+            game.move("v,2,2");
+            game.move("h,3,0");
+            game.move("h,4,3");
+            game.move("v,3,5");
+            game.move("v,1,4");
+            game.move("v,3,6");
+            game.move("h,2,0");
+            game.move("v,2,0");
+            game.move("h,5,4");
+            game.move("v,3,0");
+            game.move("h,4,1");
+            game.move("h,3,3");
+            game.move("v,2,1");
+            game.move("v,0,6");
+            game.move("h,0,2");
+            game.move("h,3,1");
+            game.move("h,2,3");
+            game.move("v,1,6");
+            game.move("h,5,3");
+            game.move("h,1,0");
+            game.move("h,1,2");
+            game.move("v,2,6");
+            game.move("v,1,3");
+            game.move("v,1,5");
+            game.move("v,1,0");
+            game.move("h,3,2");
+            game.move("h,2,1");
+            game.move("h,2,4");
+            game.move("h,1,4");
+            game.move("v,2,5");
+            game.move("v,0,0");
+            game.move("h,1,3");
+            game.move("v,2,3");
+            game.move("v,0,2");
+            game.move("h,4,4");
+            game.move("h,2,2");
+            game.move("h,4,0");
+            game.move("h,5,1");
+            game.move("v,1,2");
+            game.move("v,3,4");
+            game.move("h,0,3");
+            game.move("h,0,0");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,4,2");
         }
 }
