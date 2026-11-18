@@ -262,6 +262,35 @@ import Player from "./Player.js";
            ORDER: the 45 preset moves close exactly the 12
            separator boxes with exactly one double close, placed
            last (h,4,2), landing the turn on player 1 (the AI).
+        21) Beginner FAIL / intermediate FAIL / advanced PASS /
+           solver PASS: the safe-moves counterexample -- control
+           beats sweeping even with safe moves on the board. 7x5,
+           NOT decomposed (11 unclaimed boxes, E=13), AI (player 1)
+           to move: a ripe 4-chain {4,1,1} across the top row
+           (cols 0-3), a fresh 5-chain {5,2,2} across the bottom
+           row (cols 1-5), and a 1-sided corner box at each end of
+           the fresh chain ((4,0) and (4,6)); the other 24 boxes
+           are claimed separators. The position is worth +1 and the
+           unique optimal first move is v,0,2, ripening the offered
+           chain -- verified against the exact solver (ripen +1,
+           sweep -1, playing a safe move first -11). The heuristic
+           (beginner -- and intermediate, whose allcockMove declines
+           non-decomposed positions and whose controller declines
+           because safe moves exist) sweeps the ripe chain and nets
+           -1; advanced finds the ripen via minimax. The teeth:
+           each corner box gives exactly one safe move, and after
+           it is played the box merges into the fresh chain,
+           extending it 5 -> 7 -- so the rest stays a single long
+           chain (worth -7 to whoever must open it) and the
+           decomposed-board control rule (control iff V(rest) < -4)
+           still applies, even with safe moves present. Contrast
+           the loose-block position, where the safe move creates a
+           second fresh chain and the rest is worth +1 to the
+           player to move, so sweeping wins. Found 2026-11-17 by
+           exact-solver search over safe-move positions. ORDER: the
+           69 preset moves close exactly the 24 separator boxes
+           with exactly one double close, placed last (v,1,1),
+           landing the turn on player 1 (the AI).
         */
 
 
@@ -271,7 +300,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"20") must stay in sync with those <option> values.
+ * values here ("0"-"21") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -1341,5 +1370,107 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("h,0,0");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("h,4,2");
+        }
+        if(testCase == 21) {
+            // Safe-moves counterexample (see the header comment):
+            // 7x5, NOT decomposed, AI (player 1) to move -- a ripe
+            // 4-chain {4,1,1} (top row, cols 0-3), a fresh 5-chain
+            // {5,2,2} (bottom row, cols 1-5), and a 1-sided corner
+            // box at each end of the fresh chain ((4,0) and (4,6));
+            // 24 claimed separators. Unique optimal first move:
+            // v,0,2, ripening the offered chain (+1); sweeping is
+            // -1 and playing a safe move first is -11 (verified
+            // against the exact solver). Beginner and intermediate
+            // sweep (their controller declines: safe moves exist);
+            // advanced ripens via minimax. The 69 preset moves
+            // close exactly the 24 separator boxes with exactly
+            // one double close, placed last (v,1,1), landing the
+            // turn on player 1 (the AI).
+            height = 5;
+            width = 7;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,0");
+            game.move("h,0,1");
+            game.move("h,0,4");
+            game.move("h,1,0");
+            game.move("h,1,1");
+            game.move("h,1,4");
+            game.move("h,1,5");
+            game.move("h,2,0");
+            game.move("h,2,4");
+            game.move("h,2,5");
+            game.move("h,3,0");
+            game.move("h,3,4");
+            game.move("h,3,5");
+            game.move("h,4,4");
+            game.move("h,4,5");
+            game.move("h,5,4");
+            game.move("h,5,5");
+            game.move("h,6,4");
+            game.move("v,0,0");
+            game.move("v,0,4");
+            game.move("v,0,5");
+            game.move("v,0,6");
+            game.move("v,0,7");
+            game.move("v,1,0");
+            game.move("v,1,2");
+            game.move("v,1,3");
+            game.move("v,1,4");
+            game.move("v,1,5");
+            game.move("v,1,6");
+            game.move("v,1,7");
+            game.move("v,2,0");
+            game.move("v,2,1");
+            game.move("v,2,2");
+            game.move("v,2,3");
+            game.move("v,2,4");
+            game.move("v,2,5");
+            game.move("v,2,6");
+            game.move("v,2,7");
+            game.move("v,3,0");
+            game.move("v,3,1");
+            game.move("h,0,3");
+            game.move("h,0,2");
+            game.move("v,3,2");
+            game.move("h,1,3");
+            game.move("h,1,2");
+            game.move("v,3,3");
+            game.move("h,2,3");
+            game.move("h,2,2");
+            game.move("h,2,1");
+            game.move("v,3,4");
+            game.move("h,3,3");
+            game.move("h,3,2");
+            game.move("h,3,1");
+            game.move("v,3,5");
+            game.move("h,4,3");
+            game.move("h,4,2");
+            game.move("h,4,1");
+            game.move("h,4,0");
+            game.move("v,3,6");
+            game.move("h,5,3");
+            game.move("h,5,2");
+            game.move("h,5,1");
+            game.move("h,5,0");
+            game.move("v,3,7");
+            game.move("h,6,3");
+            game.move("h,6,2");
+            game.move("h,6,1");
+            game.move("h,6,0");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,1,1");
         }
 }
