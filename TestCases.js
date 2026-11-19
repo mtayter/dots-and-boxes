@@ -324,6 +324,35 @@ import Player from "./Player.js";
            all 17 moves are toggles, which is an odd count, so
            the turn lands on player 2 and the setup flips it back
            with one toggleTurn() before kicking the AI.
+        23) Beginner FAIL (~1/3) / intermediate FAIL (~1/3) /
+           advanced PASS / solver PASS: the free-box-versus-
+           chain-end take. 4x3, NOT decomposed (12 unclaimed
+           boxes, E=12), AI (player 1) to move: an offered
+           2-chain {2,1,2} across the top-left, two free boxes
+           {single:1} ((0,3) top-right corner and (1,2) centre),
+           a fresh 7-chain {7,2,2} snaking through the rest of
+           the board, and a 1-sided box (0,2) between the two
+           free boxes. The position is worth +4 and the optimal
+           first moves are the two free-box takes -- h,2,1
+           (takes (1,2)) and v,0,3 (takes (0,3)) -- both +4.
+           The trap is v,0,1: it takes (0,0), the 3-sided end
+           of the {2,1,2}, worth -2 (6 boxes worse). The
+           heuristic's takeOne treats every single-box take as
+           equivalent and picks uniformly at random among them,
+           so beginner and intermediate take the trap about one
+           time in three (measured 10/50 and 19/50 over 50 runs
+           each; pooled 29/100); intermediate's allcockMove
+           declines the non-decomposed position, so it falls
+           through to the same heuristic. Advanced always passes
+           via minimax (50/50 h,2,1). The deeper line: after the
+           correct first take the winner does NOT take the other
+           free box -- offering the top row (v,0,2) and taking
+           the 7-chain nets +3 from the position. Mike drew this
+           position by hand 2026-11-19. ORDER: no box is claimed
+           in the final position, so no preset move can close a
+           box -- all 19 moves are toggles, which is an odd count,
+           so the turn lands on player 2 and the setup flips it
+           back with one toggleTurn() before kicking the AI.
         */
 
 
@@ -333,7 +362,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"22") must stay in sync with those <option> values.
+ * values here ("0"-"23") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -1512,6 +1541,65 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,1,4");
             game.move("v,2,4");
             // 17 toggles land the turn on player 2; flip it back
+            // to player 1 (the AI) and kick the AI explicitly.
+            game.toggleTurn();
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.checkAImove();
+        }
+
+        if(testCase == 23) {
+            // Free-box-versus-chain-end take (see the header comment):
+            // 4x3, NOT decomposed, AI (player 1) to move -- an offered
+            // 2-chain {2,1,2} (top-left), two free boxes {single:1}
+            // ((0,3) and (1,2)), a fresh 7-chain {7,2,2} snaking
+            // through the rest, and a 1-sided box (0,2) between the
+            // free boxes; no boxes claimed. Optimal first moves: the
+            // two free-box takes h,2,1 and v,0,3 (both +4). The trap
+            // is v,0,1, taking (0,0), the 3-sided end of the {2,1,2}
+            // (-2); the heuristic's takeOne picks uniformly among the
+            // three single-box takes, so beginner and intermediate
+            // take the trap ~1/3 of the time, while advanced always
+            // passes via minimax. The 19 preset moves are all toggles
+            // (no box is claimed, so none can close a box) -- an odd
+            // count, so the turn lands on player 2; one toggleTurn()
+            // flips it back to player 1 (the AI) and checkAImove()
+            // kicks the AI.
+            height = 3;
+            width = 4;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,0");
+            game.move("h,0,1");
+            game.move("h,1,0");
+            game.move("h,1,1");
+            game.move("h,1,3");
+            game.move("h,2,0");
+            game.move("h,2,2");
+            game.move("h,2,3");
+            game.move("h,3,0");
+            game.move("h,3,1");
+            game.move("h,3,3");
+            game.move("v,0,0");
+            game.move("v,0,4");
+            game.move("v,1,0");
+            game.move("v,1,2");
+            game.move("v,1,3");
+            game.move("v,2,0");
+            game.move("v,2,1");
+            game.move("v,2,4");
+            // 19 toggles land the turn on player 2; flip it back
             // to player 1 (the AI) and kick the AI explicitly.
             game.toggleTurn();
             if (testAI !== 'human') game.players[0].ai = true;
