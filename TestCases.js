@@ -264,60 +264,66 @@ import Player from "./Player.js";
            last (h,4,2), landing the turn on player 1 (the AI).
         21) Beginner FAIL / intermediate FAIL / advanced PASS /
            solver PASS: the safe-moves counterexample -- control
-           beats sweeping even with safe moves on the board. 7x5,
-           NOT decomposed (11 unclaimed boxes, E=13), AI (player 1)
-           to move: a ripe 4-chain {4,1,1} across the top row
-           (cols 0-3), a fresh 5-chain {5,2,2} across the bottom
-           row (cols 1-5), and a 1-sided corner box at each end of
-           the fresh chain ((4,0) and (4,6)); the other 24 boxes
-           are claimed separators. The position is worth +1 and the
-           unique optimal first move is v,0,2, ripening the offered
-           chain -- verified against the exact solver (ripen +1,
-           sweep -1, playing a safe move first -11). The heuristic
+           beats sweeping even with safe moves on the board. 4x3,
+           NOT decomposed (12 unclaimed boxes, E=14), AI (player 1)
+           to move: a ripe 4-chain {4,1,1} across the top row, a
+           fresh 6-chain {6,2,2} snaking across the middle row and
+           dipping down in the centre, and a 1-sided corner box at
+           each bottom corner ((2,0) and (2,3)); no boxes claimed.
+           The position is worth +2 and the unique optimal first
+           move is v,0,2, ripening the offered chain -- verified
+           against the exact solver (ripen +2, sweep -2, playing
+           a safe move first -12). The heuristic
            (beginner -- and intermediate, whose allcockMove declines
            non-decomposed positions and whose controller declines
            because safe moves exist) sweeps the ripe chain and nets
-           -1; advanced finds the ripen via minimax. The teeth:
-           each corner box gives exactly one safe move, and after
-           it is played the box merges into the fresh chain,
-           extending it 5 -> 7 -- so the rest stays a single long
-           chain (worth -7 to whoever must open it) and the
-           decomposed-board control rule (control iff V(rest) < -4)
-           still applies, even with safe moves present. Contrast
-           the loose-block position, where the safe move creates a
-           second fresh chain and the rest is worth +1 to the
-           player to move, so sweeping wins. Found 2026-11-17 by
-           exact-solver search over safe-move positions. ORDER: the
-           69 preset moves close exactly the 24 separator boxes
-           with exactly one double close, placed last (v,1,1),
-           landing the turn on player 1 (the AI).
+           -2; advanced finds the ripen via minimax. The teeth:
+           each corner box gives exactly two safe moves (its
+           boundary edges), and after one is played the box merges
+           into the fresh chain, extending it 6 -> 7 (both corners:
+           6 -> 8) -- so the rest stays a single long chain (worth
+           -8 to whoever must open it) and the decomposed-board
+           control rule (control iff V(rest) < -4) still applies,
+           even with safe moves present. This is the small version
+           of the original 7x5 case 21 (same mechanism, same
+           +2/-2 numbers); it replaced the 7x5 position 2026-11-19
+           after Mike drew it by hand -- the drawn walls v,2,1 and
+           v,2,3 between each corner and the chain's middle boxes
+           are what make the corners clean. ORDER: no box is claimed
+           in the final position, so no preset move can close a box
+           -- all 17 moves are toggles, which is an odd count, so
+           the turn lands on player 2 and the setup flips it back
+           with one toggleTurn() before kicking the AI.
         22) Beginner FAIL / intermediate FAIL / advanced PASS /
            solver PASS: the loose-pair safe-moves position -- the
-           second branch of the priced safe-moves rule. 7x5, NOT
-           decomposed (11 unclaimed boxes, E=13), AI (player 1)
-           to move: a ripe 4-chain {4,1,1} across the top row
-           (cols 0-3), a fresh 5-chain {5,2,2} across the bottom
-           row (cols 0-4), and a loose pair (4,5),(4,6) beside
-           it; the other 24 boxes are claimed separators. The
-           position is worth +1 and the unique optimal first
-           move is v,0,2, ripening the offered chain --
-           verified against the exact solver (ripen +1, sweep
-           -1, playing a safe move first -9 or -11). The
-           heuristic (beginner -- and intermediate, whose
-           allcockMove declines non-decomposed positions and
-           whose controller declines because safe moves
-           exist) sweeps the ripe chain and nets -1; advanced
-           finds the ripen via minimax. The teeth: the loose
-           pair's shared edge is a single safe move, and
-           playing it leaves a 6-chain plus a tempo singleton
-           {single:2} -- worth +5 to the player to move -- so
-           odd tempo still favours the double-cross: control
-           wins iff (even tempo AND V(rest) < -4) OR (odd
-           tempo AND V(rest) > 4). Found 2026-11-18 by exact-
-           solver search over safe-move positions. ORDER: the
-           69 preset moves close exactly the 24 separator
-           boxes with exactly one double close, placed last
-           (h,0,2), landing the turn on player 1 (the AI).
+           second branch of the priced safe-moves rule. 4x3, NOT
+           decomposed (12 unclaimed boxes, E=14), AI (player 1)
+           to move: a ripe 4-chain {4,1,1} across the top row, a
+           fresh 6-chain {6,2,2} snaking across the middle row and
+           dipping down in the centre, and a loose pair (2,0),
+           (2,1) in the bottom-left corner beside it; no boxes
+           claimed. The position is worth +2 and the unique
+           optimal first move is v,0,2, ripening the offered
+           chain -- verified against the exact solver (ripen +2,
+           sweep -2, playing a safe move first -10 for the
+           shared edge, -12 for a boundary edge). The heuristic
+           (beginner -- and intermediate, whose allcockMove
+           declines non-decomposed positions and whose controller
+           declines because safe moves exist) sweeps the ripe
+           chain and nets -2; advanced finds the ripen via
+           minimax. The teeth: the loose pair's shared edge is
+           a single safe move, and playing it leaves a 7-chain
+           plus a tempo singleton {single:2} -- worth +6 to the
+           player to move -- so odd tempo still favours the
+           double-cross: control wins iff (even tempo AND
+           V(rest) < -4) OR (odd tempo AND V(rest) > 4). This is
+           the small version of the original 7x5 case 22 (same
+           mechanism, same +2/-2 numbers); it replaced the 7x5
+           position 2026-11-19. ORDER: no box is claimed in the
+           final position, so no preset move can close a box --
+           all 17 moves are toggles, which is an odd count, so
+           the turn lands on player 2 and the setup flips it back
+           with one toggleTurn() before kicking the AI.
         */
 
 
@@ -1400,21 +1406,23 @@ export function setupTestCase(game, testCase, testAI) {
         }
         if(testCase == 21) {
             // Safe-moves counterexample (see the header comment):
-            // 7x5, NOT decomposed, AI (player 1) to move -- a ripe
-            // 4-chain {4,1,1} (top row, cols 0-3), a fresh 5-chain
-            // {5,2,2} (bottom row, cols 1-5), and a 1-sided corner
-            // box at each end of the fresh chain ((4,0) and (4,6));
-            // 24 claimed separators. Unique optimal first move:
-            // v,0,2, ripening the offered chain (+1); sweeping is
-            // -1 and playing a safe move first is -11 (verified
-            // against the exact solver). Beginner and intermediate
-            // sweep (their controller declines: safe moves exist);
-            // advanced ripens via minimax. The 69 preset moves
-            // close exactly the 24 separator boxes with exactly
-            // one double close, placed last (v,1,1), landing the
-            // turn on player 1 (the AI).
-            height = 5;
-            width = 7;
+            // 4x3, NOT decomposed, AI (player 1) to move -- a ripe
+            // 4-chain {4,1,1} (top row), a fresh 6-chain {6,2,2}
+            // snaking across the middle row and dipping down in the
+            // centre, and a 1-sided corner box at each bottom
+            // corner ((2,0) and (2,3)); no boxes claimed. Unique
+            // optimal first move: v,0,2, ripening the offered
+            // chain (+2); sweeping is -2 and playing a safe move
+            // first is -12 (verified against the exact solver).
+            // Beginner and intermediate sweep (their controller
+            // declines: safe moves exist); advanced ripens via
+            // minimax. The 17 preset moves are all toggles (no box
+            // is claimed, so none can close a box) -- an odd count,
+            // so the turn lands on player 2; one toggleTurn() flips
+            // it back to player 1 (the AI) and checkAImove() kicks
+            // the AI.
+            height = 3;
+            width = 4;
             document.getElementById('heightRange').value = height;
             document.getElementById('widthRange').value = width;
             document.getElementById('heightValue').textContent = height;
@@ -1431,92 +1439,47 @@ export function setupTestCase(game, testCase, testAI) {
             game.players[0].ai = false;
             game.move("h,0,0");
             game.move("h,0,1");
-            game.move("h,0,4");
             game.move("h,1,0");
             game.move("h,1,1");
-            game.move("h,1,4");
-            game.move("h,1,5");
+            game.move("h,1,3");
             game.move("h,2,0");
-            game.move("h,2,4");
-            game.move("h,2,5");
+            game.move("h,2,1");
+            game.move("h,2,3");
             game.move("h,3,0");
-            game.move("h,3,4");
-            game.move("h,3,5");
-            game.move("h,4,4");
-            game.move("h,4,5");
-            game.move("h,5,4");
-            game.move("h,5,5");
-            game.move("h,6,4");
+            game.move("h,3,1");
             game.move("v,0,0");
             game.move("v,0,4");
-            game.move("v,0,5");
-            game.move("v,0,6");
-            game.move("v,0,7");
             game.move("v,1,0");
             game.move("v,1,2");
-            game.move("v,1,3");
             game.move("v,1,4");
-            game.move("v,1,5");
-            game.move("v,1,6");
-            game.move("v,1,7");
-            game.move("v,2,0");
             game.move("v,2,1");
-            game.move("v,2,2");
             game.move("v,2,3");
-            game.move("v,2,4");
-            game.move("v,2,5");
-            game.move("v,2,6");
-            game.move("v,2,7");
-            game.move("v,3,0");
-            game.move("v,3,1");
-            game.move("h,0,3");
-            game.move("h,0,2");
-            game.move("v,3,2");
-            game.move("h,1,3");
-            game.move("h,1,2");
-            game.move("v,3,3");
-            game.move("h,2,3");
-            game.move("h,2,2");
-            game.move("h,2,1");
-            game.move("v,3,4");
-            game.move("h,3,3");
-            game.move("h,3,2");
-            game.move("h,3,1");
-            game.move("v,3,5");
-            game.move("h,4,3");
-            game.move("h,4,2");
-            game.move("h,4,1");
-            game.move("h,4,0");
-            game.move("v,3,6");
-            game.move("h,5,3");
-            game.move("h,5,2");
-            game.move("h,5,1");
-            game.move("h,5,0");
-            game.move("v,3,7");
-            game.move("h,6,3");
-            game.move("h,6,2");
-            game.move("h,6,1");
-            game.move("h,6,0");
+            // 17 toggles land the turn on player 2; flip it back
+            // to player 1 (the AI) and kick the AI explicitly.
+            game.toggleTurn();
             if (testAI !== 'human') game.players[0].ai = true;
-            game.move("v,1,1");
+            game.checkAImove();
         }
         if(testCase == 22) {
             // Loose-pair safe-moves position (see the header comment):
-            // 7x5, NOT decomposed, AI (player 1) to move -- a ripe
-            // 4-chain {4,1,1} (top row, cols 0-3), a fresh 5-chain
-            // {5,2,2} (bottom row, cols 0-4), and a loose pair
-            // (4,5),(4,6) beside it; 24 claimed separators.
+            // 4x3, NOT decomposed, AI (player 1) to move -- a ripe
+            // 4-chain {4,1,1} (top row), a fresh 6-chain {6,2,2}
+            // snaking across the middle row and dipping down in the
+            // centre, and a loose pair (2,0),(2,1) in the
+            // bottom-left corner beside it; no boxes claimed.
             // Unique optimal first move: v,0,2, ripening the offered
-            // chain (+1); sweeping is -1 and playing a safe move
-            // first is -9 or -11 (verified against the exact
-            // solver). Beginner and intermediate sweep the ripe
-            // chain (their controller declines: safe moves exist);
-            // advanced ripens via minimax. The 69 preset moves
-            // close exactly the 24 separator boxes with exactly
-            // one double close, placed last (h,0,2), landing the
-            // turn on player 1 (the AI).
-            height = 5;
-            width = 7;
+            // chain (+2); sweeping is -2 and playing a safe move
+            // first is -10 (the shared edge) or -12 (a boundary
+            // edge), verified against the exact solver. Beginner
+            // and intermediate sweep the ripe chain (their
+            // controller declines: safe moves exist); advanced
+            // ripens via minimax. The 17 preset moves are all
+            // toggles (no box is claimed, so none can close a
+            // box) -- an odd count, so the turn lands on player 2;
+            // one toggleTurn() flips it back to player 1 (the AI)
+            // and checkAImove() kicks the AI.
+            height = 3;
+            width = 4;
             document.getElementById('heightRange').value = height;
             document.getElementById('widthRange').value = width;
             document.getElementById('heightValue').textContent = height;
@@ -1531,75 +1494,27 @@ export function setupTestCase(game, testCase, testAI) {
             game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
 
             game.players[0].ai = false;
-game.move("h,0,0");
-game.move("h,0,1");
-game.move("h,0,3");
-game.move("h,0,4");
-game.move("h,1,0");
-game.move("h,1,1");
-game.move("h,1,4");
-game.move("h,1,5");
-game.move("h,2,0");
-game.move("h,2,1");
-game.move("h,2,2");
-game.move("h,2,3");
-game.move("h,2,4");
-game.move("h,2,5");
-game.move("h,3,0");
-game.move("h,3,1");
-game.move("h,3,2");
-game.move("h,3,4");
-game.move("h,3,5");
-game.move("h,4,2");
-game.move("h,4,3");
-game.move("h,4,4");
-game.move("h,4,5");
-game.move("h,5,0");
-game.move("h,5,1");
-game.move("h,5,3");
-game.move("h,5,4");
-game.move("h,6,0");
-game.move("h,6,1");
-game.move("h,6,3");
-game.move("v,0,0");
-game.move("v,0,4");
-game.move("v,0,6");
-game.move("v,1,0");
-game.move("v,1,1");
-game.move("v,1,5");
-game.move("v,1,6");
-game.move("v,1,7");
-game.move("v,2,0");
-game.move("v,2,1");
-game.move("v,2,3");
-game.move("v,2,4");
-game.move("v,3,1");
-game.move("v,3,4");
-game.move("v,3,7");
-game.move("v,4,0");
-game.move("v,0,5");
-game.move("v,0,7");
-game.move("h,5,2");
-game.move("h,6,2");
-game.move("v,2,2");
-game.move("h,3,3");
-game.move("v,2,5");
-game.move("v,3,0");
-game.move("v,3,5");
-game.move("v,3,3");
-game.move("v,2,6");
-game.move("v,3,6");
-game.move("v,3,2");
-game.move("v,2,7");
-game.move("h,6,4");
-game.move("h,1,3");
-game.move("h,1,2");
-game.move("v,1,2");
-game.move("v,1,3");
-game.move("v,1,4");
-game.move("h,4,1");
-game.move("h,4,0");
-            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,0,0");
+            game.move("h,0,1");
             game.move("h,0,2");
+            game.move("h,1,0");
+            game.move("h,1,1");
+            game.move("h,1,2");
+            game.move("h,2,0");
+            game.move("h,2,1");
+            game.move("h,2,2");
+            game.move("h,2,3");
+            game.move("h,3,0");
+            game.move("h,3,1");
+            game.move("h,3,3");
+            game.move("v,0,0");
+            game.move("v,0,4");
+            game.move("v,1,4");
+            game.move("v,2,4");
+            // 17 toggles land the turn on player 2; flip it back
+            // to player 1 (the AI) and kick the AI explicitly.
+            game.toggleTurn();
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.checkAImove();
         }
 }
