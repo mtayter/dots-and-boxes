@@ -291,6 +291,33 @@ import Player from "./Player.js";
            69 preset moves close exactly the 24 separator boxes
            with exactly one double close, placed last (v,1,1),
            landing the turn on player 1 (the AI).
+        22) Beginner FAIL / intermediate FAIL / advanced PASS /
+           solver PASS: the loose-pair safe-moves position -- the
+           second branch of the priced safe-moves rule. 7x5, NOT
+           decomposed (11 unclaimed boxes, E=13), AI (player 1)
+           to move: a ripe 4-chain {4,1,1} across the top row
+           (cols 0-3), a fresh 5-chain {5,2,2} across the bottom
+           row (cols 0-4), and a loose pair (4,5),(4,6) beside
+           it; the other 24 boxes are claimed separators. The
+           position is worth +1 and the unique optimal first
+           move is v,0,2, ripening the offered chain --
+           verified against the exact solver (ripen +1, sweep
+           -1, playing a safe move first -9 or -11). The
+           heuristic (beginner -- and intermediate, whose
+           allcockMove declines non-decomposed positions and
+           whose controller declines because safe moves
+           exist) sweeps the ripe chain and nets -1; advanced
+           finds the ripen via minimax. The teeth: the loose
+           pair's shared edge is a single safe move, and
+           playing it leaves a 6-chain plus a tempo singleton
+           {single:2} -- worth +5 to the player to move -- so
+           odd tempo still favours the double-cross: control
+           wins iff (even tempo AND V(rest) < -4) OR (odd
+           tempo AND V(rest) > 4). Found 2026-11-18 by exact-
+           solver search over safe-move positions. ORDER: the
+           69 preset moves close exactly the 24 separator
+           boxes with exactly one double close, placed last
+           (h,0,2), landing the turn on player 1 (the AI).
         */
 
 
@@ -300,7 +327,7 @@ import Player from "./Player.js";
  * engine's move in that spot can be inspected.
  *
  * The dropdown labels live on the #test-select element in index.html; the
- * values here ("0"-"21") must stay in sync with those <option> values.
+ * values here ("0"-"22") must stay in sync with those <option> values.
  * The engine under test comes from the #test-ai select.
  *
  * @param {object} game - the DotGame under construction (its board arrays,
@@ -1472,5 +1499,107 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("h,6,0");
             if (testAI !== 'human') game.players[0].ai = true;
             game.move("v,1,1");
+        }
+        if(testCase == 22) {
+            // Loose-pair safe-moves position (see the header comment):
+            // 7x5, NOT decomposed, AI (player 1) to move -- a ripe
+            // 4-chain {4,1,1} (top row, cols 0-3), a fresh 5-chain
+            // {5,2,2} (bottom row, cols 0-4), and a loose pair
+            // (4,5),(4,6) beside it; 24 claimed separators.
+            // Unique optimal first move: v,0,2, ripening the offered
+            // chain (+1); sweeping is -1 and playing a safe move
+            // first is -9 or -11 (verified against the exact
+            // solver). Beginner and intermediate sweep the ripe
+            // chain (their controller declines: safe moves exist);
+            // advanced ripens via minimax. The 69 preset moves
+            // close exactly the 24 separator boxes with exactly
+            // one double close, placed last (h,0,2), landing the
+            // turn on player 1 (the AI).
+            height = 5;
+            width = 7;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+game.move("h,0,0");
+game.move("h,0,1");
+game.move("h,0,3");
+game.move("h,0,4");
+game.move("h,1,0");
+game.move("h,1,1");
+game.move("h,1,4");
+game.move("h,1,5");
+game.move("h,2,0");
+game.move("h,2,1");
+game.move("h,2,2");
+game.move("h,2,3");
+game.move("h,2,4");
+game.move("h,2,5");
+game.move("h,3,0");
+game.move("h,3,1");
+game.move("h,3,2");
+game.move("h,3,4");
+game.move("h,3,5");
+game.move("h,4,2");
+game.move("h,4,3");
+game.move("h,4,4");
+game.move("h,4,5");
+game.move("h,5,0");
+game.move("h,5,1");
+game.move("h,5,3");
+game.move("h,5,4");
+game.move("h,6,0");
+game.move("h,6,1");
+game.move("h,6,3");
+game.move("v,0,0");
+game.move("v,0,4");
+game.move("v,0,6");
+game.move("v,1,0");
+game.move("v,1,1");
+game.move("v,1,5");
+game.move("v,1,6");
+game.move("v,1,7");
+game.move("v,2,0");
+game.move("v,2,1");
+game.move("v,2,3");
+game.move("v,2,4");
+game.move("v,3,1");
+game.move("v,3,4");
+game.move("v,3,7");
+game.move("v,4,0");
+game.move("v,0,5");
+game.move("v,0,7");
+game.move("h,5,2");
+game.move("h,6,2");
+game.move("v,2,2");
+game.move("h,3,3");
+game.move("v,2,5");
+game.move("v,3,0");
+game.move("v,3,5");
+game.move("v,3,3");
+game.move("v,2,6");
+game.move("v,3,6");
+game.move("v,3,2");
+game.move("v,2,7");
+game.move("h,6,4");
+game.move("h,1,3");
+game.move("h,1,2");
+game.move("v,1,2");
+game.move("v,1,3");
+game.move("v,1,4");
+game.move("h,4,1");
+game.move("h,4,0");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,0,2");
         }
 }
