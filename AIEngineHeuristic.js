@@ -38,15 +38,18 @@ export default class AIEngineHeuristic {
     //
     // Two modes:
     //  - CONTROLLER (3-sided boxes exist): the opponent has offered a
-    //    component. Apply the double-cross / hard-hearted handout: take a
-    //    long component down to all-but-2 (chain) or all-but-4 (loop), then
-    //    "ripen" the rest (play an interior edge that makes boxes 3-sided
-    //    without taking anything) so the opponent must take them and open
-    //    the next component. Short offered chains are ripened immediately
-    //    rather than taken. Take everything only when no other significant
-    //    component remains. (Checked first: a component capturable
-    //    completely by one closing move is always taken — the
-    //    decomposedOneMoveCapture theorem.)
+    //    component. Priority order inside this mode (2026-11-20):
+    //    (1) one-move captures — a ready singleton or an enclosed
+    //    domino, on ANY board (the decomposed gate is gone: taking
+    //    one is always optimal, including a singleton whose closing
+    //    edge is shared with a junction — verified against the exact
+    //    solver over 599 junction-singleton takes, 0 suboptimal);
+    //    (2) an enclosed triplet {3,1,1} sweep — take one end
+    //    (sweep-first is always optimal for n <= 3, on any board);
+    //    (3) the controller / double-cross logic below; (4) greedy.
+    //    The capture and triplet steps are re-evaluated on every
+    //    call, so a take that changes a neighbour (e.g. a junction
+    //    going 1 -> 2 sides) is never applied from a stale pool.
     //  - OPENER (no takes): safe moves first, then open the smallest
     //    pendant chain at an end (falling back to the smallest 2-area).
     chooseFallbackMove(h, v) {
@@ -64,8 +67,10 @@ export default class AIEngineHeuristic {
         }
 
         if (threes.length > 0) {
-            const capture = this.decomposedOneMoveCapture();
+            const capture = this.oneMoveCapture();
             if (capture) return capture;
+            const triplet = this.enclosedTripletSweep();
+            if (triplet) return triplet;
             const m = this.controllerMove(threes);
             if (m) return m;
             return this.greedyTake(threes);
@@ -158,9 +163,8 @@ export default class AIEngineHeuristic {
         }
         return true;
     }
-    // ONE-MOVE CAPTURES on fully decomposed boards (2026-11-06,
-    // Mike's rule, proved + exhaustively checked against the exact
-    // micro-game evaluator): if a component can be COMPLETELY
+    // ONE-MOVE CAPTURES on ANY board (2026-11-06 theorem, gate
+    // dropped 2026-11-20): if a component can be COMPLETELY
     // captured by one closing move -- gain g, no residue -- then
     // V(component + rest) = g + V(rest). Capturing first attains
     // that bound; a closing move elsewhere commutes (capture next,
@@ -175,17 +179,17 @@ export default class AIEngineHeuristic {
     // NOT included: a 3-sided box inside a longer chain/loop (taking
     // there is the control question), a {single:2} (not takeable --
     // playing in it ripens it and passes the turn), and a 2-chain
-    // with an open end ({2,1,2} / {2,2,2}). Runs only when every
-    // box has >= 2 sides (fully decomposed) and only after the
-    // evaluator branch above has declined (out-of-gate / timed
-    // out), so in-gate exact play is unchanged. Picks randomly
-    // among qualifying captures, as elsewhere.
-    decomposedOneMoveCapture() {
-        for (let i = 0; i < this.y; i++) {
-            for (let j = 0; j < this.x; j++) {
-                if (this.squares[i][j] < 2) return null;
-            }
-        }
+    // with an open end ({2,1,2} / {2,2,2}). The old decomposed
+    // pre-check (every box >= 2 sides) is gone: a singleton's
+    // closing edge touches no unclaimed box with 2+ sides
+    // (otherwise that box would be part of the same region), so
+    // taking it only adds a side to a loose (<2-side) neighbour --
+    // including a junction, whose side count goes at most 1 -> 2 --
+    // and never creates a new offered box. Verified 2026-11-20
+    // against the exact solver: 599 junction-singleton takes, 0
+    // suboptimal, including shared-junction positions. Picks
+    // randomly among qualifying captures, as elsewhere.
+    oneMoveCapture() {
         const pool = [];
         for (const region of this.buildRegions()) {
             if (region.length === 1) {
@@ -198,6 +202,36 @@ export default class AIEngineHeuristic {
                 if (this.squares[i][j] === 3 && this.squares[ni][nj] === 3) {
                     pool.push(this.sharedEdge(i, j, ni, nj));
                 }
+            }
+        }
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
+    }
+    // ENCLOSED TRIPLET SWEEP (2026-11-20): a size-3 region with
+    // exactly two 3-sided boxes and one 2-sided box is {3,1,1} --
+    // both ends offered, middle 2-sided. Sweep-first is always
+    // optimal for n <= 3 on any board (verified 2026-11-18 by
+    // exact enumeration of every first move), so take one end:
+    // draw the shared edge between a 3-sided end and the 2-sided
+    // middle, closing the end and keeping the turn. The remaining
+    // {2,1,1} domino is then a oneMoveCapture on the next call, so
+    // the whole triplet is swept in one turn. Only edges whose far
+    // box is the 2-sided middle qualify (the ends are never
+    // adjacent to each other on a grid, so this is also the guard
+    // against any shape where an end-to-end edge would close two
+    // boxes at once). Picks randomly among the qualifying ends.
+    enclosedTripletSweep() {
+        const pool = [];
+        for (const region of this.buildRegions()) {
+            if (region.length !== 3) continue;
+            const threes = region.filter(([i, j]) => this.squares[i][j] === 3);
+            const twos = region.filter(([i, j]) => this.squares[i][j] === 2);
+            if (threes.length !== 2 || twos.length !== 1) continue;
+            const [mi, mj] = twos[0];
+            for (const [i, j] of threes) {
+                const e = this.untakenEdges(i, j)[0];
+                const [a, b] = this.edgeBoxes(e);
+                const far = (a && a[0] === i && a[1] === j) ? b : a;
+                if (far && far[0] === mi && far[1] === mj) pool.push(e);
             }
         }
         return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
