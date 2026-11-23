@@ -353,6 +353,90 @@ import Player from "./Player.js";
            box -- all 19 moves are toggles, which is an odd count,
            so the turn lands on player 2 and the setup flips it
            back with one toggleTurn() before kicking the AI.
+        24) Beginner FAIL / intermediate FAIL / advanced PASS /
+           solver PASS: the loop-<=4 ripen counterexample -- the
+           first case for the controller's short-loop branch. 3x3,
+           NOT decomposed (9 unclaimed boxes, E=10), AI (player 1)
+           to move: a 4-chain across the top row and down the right
+           column (all 2-sided), an offered 4-loop (1,0),(1,1),
+           (2,1),(2,0) with its two bottom boxes 3-sided, and a
+           lone 2-sided box (2,2); no boxes claimed, no safe moves.
+           The position is worth +7 and the optimal first moves
+           take an offered loop box -- h,0,2 or h,1,2 (both +7).
+           The heuristic's controller ripens the loop instead:
+           doubleLoony plays v,1,1, the edge shared by the loop's
+           two 2-sided boxes, worth -7 -- a 14-box swing, the
+           largest gap of any case -- verified against the exact
+           solver (50/50 runs; the ripen pool has exactly one
+           edge). Intermediate's allcockMove declines the
+           non-decomposed position and falls through to the same
+           heuristic; advanced finds a take via minimax. Found
+           2026-11-23 by random search with loop planting (621
+           deterministic failures in ~1.9M positions; this is the
+           smallest, E=10). ORDER: no box is claimed in the final
+           position, so no preset move can close a box -- all 14
+           moves are toggles, which is an even count, so the turn
+           lands on player 1 (the AI), and move() triggers
+           checkAImove. Any order works.
+        25) Beginner FAIL / intermediate FAIL / advanced PASS /
+           solver PASS: the opener smallest-area counterexample --
+           the smallest 2-sided area is the wrong one to open.
+           3x3, NOT decomposed (9 unclaimed boxes, E=12), AI
+           (player 1) to move. Side counts:
+             2 2 2
+             2 2 1
+             2 1 2
+           No take is available, so the heuristic is in opener
+           mode. Its smallest 2-sided area is the lone box (0,2)
+           -- a single-box area, so findChains finds no chain and
+           the opener falls back to a random border edge of it:
+           h,2,0 or h,2,1, both worth -1. The optimal first moves
+           are the edges of the (1,2)/(2,2) area -- h,1,2, h,2,2,
+           v,1,2, v,2,2 (all +3), verified against the exact
+           solver -- a 4-box gap, deterministic (50/50 runs).
+           Intermediate's allcockMove declines the non-decomposed
+           position and falls through to the same heuristic;
+           advanced finds an optimal edge via minimax. Found
+           2026-11-23 by random search (the only deterministic
+           opener failure in ~1.9M positions). ORDER: no box is
+           claimed in the final position, so no preset move can
+           close a box -- all 12 moves are toggles, which is an
+           even count, so the turn lands on player 1 (the AI),
+           and move() triggers checkAImove. Any order works.
+        26) Beginner FAIL (~63%) / intermediate FAIL (~63%) /
+           advanced PASS / solver PASS: the opener within-chain
+           edge-choice counterexample -- the right chain, the
+           wrong edge. 3x3, NOT decomposed (9 unclaimed boxes,
+           E=11), AI (player 1) to move. Side counts:
+             2 2 2
+             2 2 2
+             2 1 2
+           No take is available, so the heuristic is in opener
+           mode. It picks the smallest chain correctly -- the
+           2-box chain (0,1)-(1,1) -- but then picks uniformly
+           among that chain's three open edges, and they are not
+           equivalent: the interior shared edge h,1,1 is the
+           unique optimal move (+5), while the two end edges
+           h,1,0 and h,1,2 are both -5 -- a 10-box gap, verified
+           against the exact solver. The heuristic plays an end
+           edge about two times in three (19/30 runs). Why the
+           interior edge wins: it makes both chain boxes 3-sided
+           with different closing edges, so the opponent takes
+           them and must open the rest; an end edge lets the
+           opponent counter-open (h,1,2) and force the mover to
+           take both boxes and open the rest instead. This
+           refutes the "all chain moves are optimal" note on
+           case 9: that claim was verified only on the all-2-sided
+           family (test 9 and a ~80k-position search), and this
+           position has a 1-sided box (2,1), outside that family.
+           Intermediate's allcockMove declines the non-decomposed
+           position and falls through to the same heuristic;
+           advanced finds h,1,1 via minimax. Found 2026-11-23
+           by random search. ORDER: no box is claimed in the
+           final position, so no preset move can close a box --
+           all 13 moves are toggles, which is an odd count, so
+           the turn lands on player 2 and the setup flips it back
+           with one toggleTurn() before kicking the AI.
         */
 
 
@@ -1600,6 +1684,142 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("v,2,1");
             game.move("v,2,4");
             // 19 toggles land the turn on player 2; flip it back
+            // to player 1 (the AI) and kick the AI explicitly.
+            game.toggleTurn();
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.checkAImove();
+        }
+        if(testCase == 24) {
+            // Loop-<=4 ripen counterexample (see the header comment):
+            // 3x3, NOT decomposed, AI (player 1) to move -- a 4-chain
+            // across the top row and down the right column (all
+            // 2-sided), an offered 4-loop (1,0),(1,1),(2,1),(2,0)
+            // with its two bottom boxes 3-sided, and a lone 2-sided
+            // box (2,2); no boxes claimed, no safe moves. Optimal
+            // first moves: h,0,2 or h,1,2, taking an offered loop
+            // box (both +7). The heuristic's controller ripens the
+            // loop instead (doubleLoony v,1,1, -7). The 14 preset
+            // moves are all toggles (no box is claimed, so none can
+            // close a box) -- an even count, so the turn lands on
+            // player 1 (the AI), and the last move triggers
+            // checkAImove.
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,1");
+            game.move("v,1,0");
+            game.move("h,1,1");
+            game.move("v,1,2");
+            game.move("h,1,3");
+            game.move("v,2,2");
+            game.move("h,0,3");
+            game.move("v,2,0");
+            game.move("v,2,1");
+            game.move("h,2,2");
+            game.move("v,0,3");
+            game.move("h,1,0");
+            game.move("h,2,0");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("h,0,0");
+        }
+        if(testCase == 25) {
+            // Opener smallest-area counterexample (see the header
+            // comment): 3x3, NOT decomposed, AI (player 1) to move.
+            // No take is available, so the heuristic is in opener
+            // mode; its smallest 2-sided area is the lone box (0,2),
+            // and it plays a random border edge of it (h,2,0 or
+            // h,2,1, both -1). The optimal first moves are the edges
+            // of the (1,2)/(2,2) area (h,1,2, h,2,2, v,1,2, v,2,2,
+            // all +3). The 12 preset moves are all toggles (no box
+            // is claimed, so none can close a box) -- an even count,
+            // so the turn lands on player 1 (the AI), and the last
+            // move triggers checkAImove.
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,0");
+            game.move("v,2,0");
+            game.move("h,1,1");
+            game.move("h,2,3");
+            game.move("v,0,2");
+            game.move("v,1,3");
+            game.move("h,0,2");
+            game.move("h,1,3");
+            game.move("v,0,3");
+            game.move("v,0,0");
+            game.move("v,1,1");
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.move("v,2,3");
+        }
+        if(testCase == 26) {
+            // Opener within-chain edge-choice counterexample (see the
+            // header comment): 3x3, NOT decomposed, AI (player 1) to
+            // move. No take is available, so the heuristic is in
+            // opener mode; it picks the smallest chain (0,1)-(1,1)
+            // correctly but then picks uniformly among its three open
+            // edges. The interior shared edge h,1,1 is the unique
+            // optimal move (+5); the end edges h,1,0 and h,1,2 are
+            // both -5. The 13 preset moves are all toggles (no box
+            // is claimed, so none can close a box) -- an odd count,
+            // so the turn lands on player 2; one toggleTurn() flips
+            // it back to player 1 (the AI) and checkAImove() kicks
+            // the AI.
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,0,3");
+            game.move("v,0,2");
+            game.move("v,1,2");
+            game.move("v,2,0");
+            game.move("h,2,3");
+            game.move("v,2,3");
+            game.move("h,1,3");
+            game.move("v,1,0");
+            game.move("v,0,1");
+            game.move("v,1,3");
+            game.move("v,1,1");
+            game.move("h,2,0");
+            game.move("h,0,0");
+            // 13 toggles land the turn on player 2; flip it back
             // to player 1 (the AI) and kick the AI explicitly.
             game.toggleTurn();
             if (testAI !== 'human') game.players[0].ai = true;
