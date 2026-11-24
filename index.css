@@ -291,9 +291,24 @@
   cursor: default;
 }
 
-#games-counter {
+#games-counter,
+#history-counter {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+/* Move-history review in the setup box: same step-button pattern as
+   the saved-games box. The Resume AI button spans the panel so the
+   stalled game has an obvious way forward. */
+#historyBox {
+  margin-top: 0.75rem;
+}
+
+#history-unpause {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
 }
 
 .games-info {
