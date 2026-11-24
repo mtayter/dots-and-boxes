@@ -72,13 +72,14 @@
                 <!-- Move history: step back/forward through the recorded
                      moves (snapshots), and resume a paused AI. Back steps
                      back exactly one move and pauses the AI when one plays;
-                     Resume AI is shown only while paused. -->
+                     Resume AI is always present but disabled unless the AI
+                     is paused, so showing it never shifts the layout. -->
                 <div class="games-nav" id="historyBox">
                     <button id="history-back" class="games-step" aria-label="Back one move">&#9664; Back</button>
                     <span id="history-counter">Move 0 of 0</span>
                     <button id="history-next" class="games-step" aria-label="Forward one move">Forward &#9654;</button>
                 </div>
-                <button id="history-unpause" class="games-step hidden" aria-label="Resume AI">Resume AI</button>
+                <button id="history-unpause" class="games-step" disabled aria-label="Resume AI">Resume AI</button>
             </fieldset>
             </div>
 

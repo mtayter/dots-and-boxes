@@ -129,7 +129,7 @@ export default class DotGame {
         // its own handlers through this game's AbortController: destroy()
         // drops them when the game is replaced, so a stale game can never
         // step the new board. Back/Forward appear in every game; Resume
-        // AI is shown only while the AI is paused (see
+        // AI is always present but disabled unless the AI is paused (see
         // syncHistoryButtons).
         const histBack = document.getElementById('history-back');
         const histNext = document.getElementById('history-next');
@@ -319,10 +319,10 @@ export default class DotGame {
     }
     // Back disabled at the blank board, Forward disabled at the latest
     // move; the counter reads "Move k of n" where n is the number of
-    // moves recorded. Resume AI is shown only while paused (in
-    // human-vs-human games there is never a pause, so it never appears
-    // there). classList add/remove, not toggle: the node harness stubs
-    // classList without toggle.
+    // moves recorded. Resume AI is always present but disabled unless
+    // paused (in human-vs-human games there is never a pause, so it
+    // stays disabled there) -- keeping it in the layout means nothing
+    // moves when it becomes available.
     syncHistoryButtons() {
         const back = document.getElementById('history-back');
         const next = document.getElementById('history-next');
@@ -332,10 +332,7 @@ export default class DotGame {
         if (back) back.disabled = this.histIndex <= 0;
         if (next) next.disabled = this.histIndex >= latest;
         if (counter) counter.textContent = `Move ${this.histIndex} of ${Math.max(0, latest)}`;
-        if (unpause) {
-            if (this.paused) unpause.classList.remove('hidden');
-            else unpause.classList.add('hidden');
-        }
+        if (unpause) unpause.disabled = !this.paused;
     }
     showGameOver() {
         const winner = this.scoreboard.whoWon();
