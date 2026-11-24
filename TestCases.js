@@ -437,6 +437,47 @@ import Player from "./Player.js";
            all 13 moves are toggles, which is an odd count, so
            the turn lands on player 2 and the setup flips it back
            with one toggleTurn() before kicking the AI.
+        27) Beginner PASS with the new multi-offer controller
+           (PARTIAL 6/10 with the old greedy bail) / intermediate
+           PASS (PARTIAL 8/10 with the old code) / advanced PASS /
+           solver PASS: the multi-offer counterexample -- two
+           offered regions, and greedy takes from the wrong one.
+           3x3, decomposed (9 unclaimed boxes, E=9), AI (player 1)
+           to move. Side counts:
+             2 2 2
+             3 2 2
+             2 3 3
+           Two regions are offered: a 4-loop (1,0):3 (1,1):2
+           (1,2):2 (2,2):3 and a {2,1,2} 2-chain (2,0):2
+           (2,1):3. The top row is a fresh 3-chain, the rest.
+           The position is worth +5 and the optimal first moves
+           take a loop box -- h,2,2 or v,1,1 (both +5). The new
+           controller leaves the 2-chain last (a chain's give-back
+           of 2 beats a loop's 4), sweeps the loop first, then
+           double-crosses the 2-chain (v,2,0), so the opponent
+           takes both chain boxes and must open the fresh 3-chain
+           -- the full line nets +5. The old code bailed on
+           multi-offer positions (controllerMove returned null
+           unless exactly one region was offered) and fell through
+           to greedyTake, which picks uniformly among all 3-sided
+           boxes -- including v,2,1, the 2-chain's offered box,
+           worth only +3. Taking the 2-chain first collapses it
+           to a single box, captured next move, leaving the loop
+           as the last offered region; the loop is then ripened
+           (doubleLoony) instead of swept -- the case-24 failure
+           -- and the line nets only +1 against an optimal
+           opponent. Greedy plays the trap 36/100 runs; the new
+           controller plays an optimal take 100/100 runs.
+           allcockMove declines the position (decomposed but
+           out of domain), so intermediate falls through to the
+           same heuristic; advanced finds a take via minimax.
+           Found 2026-11-23 by targeted random search (5
+           first-move multi-offer failures in ~129k positions;
+           this is the smallest, E=9). ORDER: no box is claimed
+           in the final position, so no preset move can close a
+           box -- all 15 moves are toggles, which is an odd count,
+           so the turn lands on player 2 and the setup flips it
+           back with one toggleTurn() before kicking the AI.
         */
 
 
@@ -1820,6 +1861,57 @@ export function setupTestCase(game, testCase, testAI) {
             game.move("h,2,0");
             game.move("h,0,0");
             // 13 toggles land the turn on player 2; flip it back
+            // to player 1 (the AI) and kick the AI explicitly.
+            game.toggleTurn();
+            if (testAI !== 'human') game.players[0].ai = true;
+            game.checkAImove();
+        }
+        if(testCase == 27) {
+            // Multi-offer counterexample (see the header comment):
+            // 3x3, decomposed, AI (player 1) to move. Two regions
+            // are offered -- a 4-loop (1,0),(1,1),(1,2),(2,2) and
+            // a {2,1,2} 2-chain (2,0),(2,1) -- plus a fresh 3-chain
+            // (top row) as the rest. The new controller leaves the
+            // 2-chain last and sweeps the loop first (h,2,2 or
+            // v,1,1, both +5); the old code bailed to greedy, which
+            // plays the trap v,2,1 (+3) about a third of the time.
+            // The 15 preset moves are all toggles (no box is
+            // claimed, so none can close a box) -- an odd count,
+            // so the turn lands on player 2; one toggleTurn()
+            // flips it back to player 1 (the AI) and checkAImove()
+            // kicks the AI.
+            height = 3;
+            width = 3;
+            document.getElementById('heightRange').value = height;
+            document.getElementById('widthRange').value = width;
+            document.getElementById('heightValue').textContent = height;
+            document.getElementById('widthValue').textContent = width;
+            game.vLines = Array.from({ length: height }, () => Array(width+1).fill(0));
+            game.hLines = Array.from({ length: width }, () => Array(height+1).fill(0));
+            game.squares = Array.from({ length: height }, () => Array(width).fill(0));
+            game.squaresLeft = height * width;
+            document.getElementById('player1Type').value = testAI;
+            document.getElementById('player2Type').value = 'human';
+            game.players[0] = new Player(game.players[0].name,game.players[0].color,game.players[0].hover,testAI);
+            game.players[1] = new Player(game.players[1].name,game.players[1].color,game.players[1].hover,'human');
+
+            game.players[0].ai = false;
+            game.move("h,2,0");
+            game.move("h,0,3");
+            game.move("h,0,1");
+            game.move("h,2,3");
+            game.move("h,1,0");
+            game.move("v,0,0");
+            game.move("v,2,3");
+            game.move("v,1,3");
+            game.move("h,1,2");
+            game.move("h,2,1");
+            game.move("h,0,2");
+            game.move("v,1,0");
+            game.move("h,1,1");
+            game.move("h,1,3");
+            game.move("v,2,2");
+            // 15 toggles land the turn on player 2; flip it back
             // to player 1 (the AI) and kick the AI explicitly.
             game.toggleTurn();
             if (testAI !== 'human') game.players[0].ai = true;
