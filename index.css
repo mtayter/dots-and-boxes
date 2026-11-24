@@ -260,11 +260,6 @@
   color: var(--text-primary);
 }
 
-/* Saved-games review box: game picker, step buttons, move counter. */
-.games-box {
-  gap: 0.75rem;
-}
-
 .games-nav {
   display: flex;
   align-items: center;
@@ -297,9 +292,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Move-history review in the setup box: same step-button pattern as
-   the saved-games box. The Resume AI button spans the panel so the
-   stalled game has an obvious way forward. */
+/* Move-history review in the setup box. The Resume AI button spans the
+   panel so the stalled game has an obvious way forward. */
 #historyBox {
   margin-top: 0.75rem;
 }
@@ -309,12 +303,6 @@
   margin-top: 0.5rem;
   padding: 0.5rem 1rem;
   font-weight: 600;
-}
-
-.games-info {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 

@@ -97,16 +97,14 @@ function init() {
     window.addEventListener('resize', handleResize)
     handleResize();
 
-    // The saved-games box is displayed only together with the test
-    // panel (Mike, 2026-11-06): both user-facing visibility controls
-    // (the X and the Konami toggle) drive the two boxes as a pair.
-    // (The review-load path in abandonCurrent above hides ONLY the
-    // test panel — the DotGame constructor reads its visibility to
-    // decide whether to apply a test case — while the games box
-    // stays up as the review's control surface.)
+    // The test panel (Konami code / X) toggles just itself now: the
+    // saved-games box that used to show with it was removed 2026-11-23
+    // (it fell off the bottom of the screen once the history buttons
+    // were added). SavedGames.js and saved-games.json stay in the repo,
+    // and initSavedGames() no-ops while its elements are absent, so
+    // the box can come back by restoring its markup.
     function setTestPanelVisible(visible) {
         document.getElementById('testBox').classList.toggle('hidden', !visible);
-        document.getElementById('gamesBox').classList.toggle('hidden', !visible);
     }
 
     // The X in the test panel corner hides the pair.
