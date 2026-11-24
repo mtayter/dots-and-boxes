@@ -262,6 +262,24 @@ export default class AIEngineHeuristic {
     controllerMove(threes) {
         const regions = this.buildRegions();
         const offered = regions.filter(r => r.some(([i,j]) => this.squares[i][j] == 3));
+        // Multiple offered regions: sweep all but one, then control the
+        // last. Taking an offered box keeps the turn, so sweeping the
+        // other regions is free; handing the turn over while offers
+        // remain lets the opponent pocket them -- controlling the first
+        // region is worse than controlling the last by twice the
+        // remaining offered boxes. Prefer leaving a chain (give-back 2
+        // beats a loop's 4); among the preferred shape, the first
+        // region in scan order. The single-offer logic below then
+        // controls the last region once it is the only one offered.
+        // (No safe-move guard is needed while sweeping: no give-back
+        // happens until the last region, where the guard applies.)
+        if (offered.length > 1) {
+            const chains = offered.filter(r => !this.isLoop(r));
+            const pool = chains.length > 0 ? chains : offered;
+            const last = pool[0];
+            const others = offered.filter(r => r !== last);
+            return this.takeOne(others[0]);
+        }
         if (offered.length != 1) return null;
         const R = offered[0];
         const rset = new Set(R.map(([i,j]) => i+','+j));
